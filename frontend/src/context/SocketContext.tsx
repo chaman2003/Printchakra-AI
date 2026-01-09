@@ -77,15 +77,16 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     console.log(`[Socket] Backend URL: ${API_BASE_URL}`);
 
     try {
-      // Use websocket transport only to avoid HTTP polling/OPTIONS preflights on refresh
+      // Support both websocket and polling to handle all network conditions
+      // (local, HTTPS with self-signed certs, ngrok, deployed)
       const newSocket = io(API_BASE_URL, {
         ...SOCKET_CONFIG,
-        transports: ['websocket'],
-        upgrade: false,
+        transports: ['websocket', 'polling'],
+        upgrade: true,
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        reconnectionAttempts: 3, // keep retries small to avoid storming
+        reconnectionAttempts: 5,
         timeout: 20000,
       });
 

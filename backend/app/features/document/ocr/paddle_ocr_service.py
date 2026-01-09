@@ -141,10 +141,7 @@ class PaddleOCRService:
             Path to saved JSON file
         """
         try:
-            # Generate result filename
-            base_name = os.path.splitext(filename)[0]
-            json_filename = f"{base_name}_ocr.json"
-            json_path = os.path.join(self.ocr_data_dir, json_filename)
+            json_path = self._get_result_path(filename)
             
             # Convert result to dict
             if hasattr(result, 'to_dict'):
@@ -166,6 +163,20 @@ class PaddleOCRService:
         except Exception as e:
             logger.error(f"Failed to save OCR result: {e}")
             raise
+    
+    def _get_result_path(self, filename: str) -> str:
+        """
+        Get the path for OCR result JSON file.
+        
+        Args:
+            filename: Original filename
+            
+        Returns:
+            Path to OCR result JSON file
+        """
+        base_name = os.path.splitext(filename)[0]
+        json_filename = f"{base_name}_ocr.json"
+        return os.path.join(self.ocr_data_dir, json_filename)
     
     def load_result(self, filename: str) -> Optional[Dict[str, Any]]:
         """

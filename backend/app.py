@@ -335,6 +335,8 @@ $printers = Get-Printer | Sort-Object -Property Name
 $result = @()
 foreach ($printer in $printers) {
     $jobs = @()
+    
+    # Method 1: Try Get-PrintJob (standard API)
     try {
         $jobs = Get-PrintJob -PrinterName $printer.Name -ErrorAction Stop | ForEach-Object {
             [PSCustomObject]@{
@@ -348,12 +350,51 @@ foreach ($printer in $printers) {
                 sizeBytes = $_.Size
             }
         }
-    } catch {}
+    } catch {
+        # Method 2: Fallback to WMI if Get-PrintJob fails
+        try {
+            $wmiJobs = Get-WmiObject -Class Win32_PrintJob -Filter "Name like '%$($printer.Name)%'" -ErrorAction Stop
+            $jobs = $wmiJobs | ForEach-Object {
+                [PSCustomObject]@{
+                    id = $_.JobId
+                    document = $_.Document
+                    owner = $_.Owner
+                    status = $_.Status
+                    submitted = $_.TimeSubmitted
+                    totalPages = $_.TotalPages
+                    pagesPrinted = $_.PagesPrinted
+                    sizeBytes = $_.Size
+                }
+            }
+        } catch {
+            # Method 3: Last resort - check spool directory for .SPL/.SHD files
+            try {
+                $spoolPath = Join-Path $env:windir 'System32\spool\PRINTERS'
+                if (Test-Path $spoolPath) {
+                    $spoolFiles = Get-ChildItem -Path $spoolPath -Filter '*.SPL' -ErrorAction SilentlyContinue
+                    $jobs = $spoolFiles | ForEach-Object {
+                        $shdFile = Join-Path $spoolPath ($_.BaseName + '.SHD')
+                        [PSCustomObject]@{
+                            id = $_.BaseName
+                            document = $_.Name
+                            owner = 'unknown'
+                            status = 'spooling'
+                            submitted = $_.CreationTime.ToString('o')
+                            totalPages = $null
+                            pagesPrinted = $null
+                            sizeBytes = $_.Length
+                        }
+                    }
+                }
+            } catch {}
+        }
+    }
+    
     $result += [PSCustomObject]@{
         name = $printer.Name
         status = $printer.PrinterStatus
         isDefault = $printer.Default
-        jobs = $jobs
+        jobs = @($jobs)
     }
 }
 $result | ConvertTo-Json -Depth 6
@@ -614,6 +655,15 @@ socketio = SocketIO(
     cors_credentials=True,
 )
 
+# CRITICAL: Update the socketio instance in app.core so all features use the same instance
+# This ensures socketio.emit() calls in routes work properly
+try:
+    import app.core as core_module
+    core_module.socketio = socketio
+    logger.info("[Socket.IO] Registered with app.core for feature routes")
+except Exception as e:
+    logger.warning(f"[Socket.IO] Could not register with app.core: {e}")
+
 # Base directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
@@ -744,6 +794,14 @@ try:
 except ImportError as e:
     print(f"[WARN] Could not import document API blueprint: {e}")
 
+# Import and register chat_flow blueprint
+try:
+    from app.chat_flow import chat_flow_bp
+    app.register_blueprint(chat_flow_bp)
+    print("[OK] Chat Flow blueprint registered")
+except ImportError as e:
+    print(f"[WARN] Could not import chat_flow blueprint: {e}")
+
 # ============================================================================
 # PRINTER QUEUE ROUTES (Module level - always available)
 # ============================================================================
@@ -788,6 +846,8 @@ $printers = Get-Printer | Sort-Object -Property Name
 $result = @()
 foreach ($printer in $printers) {
     $jobs = @()
+    
+    # Method 1: Try Get-PrintJob (standard API)
     try {
         $jobs = Get-PrintJob -PrinterName $printer.Name -ErrorAction Stop | ForEach-Object {
             [PSCustomObject]@{
@@ -801,7 +861,46 @@ foreach ($printer in $printers) {
                 sizeBytes = $_.Size
             }
         }
-    } catch {}
+    } catch {
+        # Method 2: Fallback to WMI if Get-PrintJob fails
+        try {
+            $wmiJobs = Get-WmiObject -Class Win32_PrintJob -Filter "Name like '%$($printer.Name)%'" -ErrorAction Stop
+            $jobs = $wmiJobs | ForEach-Object {
+                [PSCustomObject]@{
+                    id = $_.JobId
+                    document = $_.Document
+                    owner = $_.Owner
+                    status = $_.Status
+                    submitted = $_.TimeSubmitted
+                    totalPages = $_.TotalPages
+                    pagesPrinted = $_.PagesPrinted
+                    sizeBytes = $_.Size
+                }
+            }
+        } catch {
+            # Method 3: Last resort - check spool directory for .SPL/.SHD files
+            try {
+                $spoolPath = Join-Path $env:windir 'System32\spool\PRINTERS'
+                if (Test-Path $spoolPath) {
+                    $spoolFiles = Get-ChildItem -Path $spoolPath -Filter '*.SPL' -ErrorAction SilentlyContinue
+                    $jobs = $spoolFiles | ForEach-Object {
+                        $shdFile = Join-Path $spoolPath ($_.BaseName + '.SHD')
+                        [PSCustomObject]@{
+                            id = $_.BaseName
+                            document = $_.Name
+                            owner = 'unknown'
+                            status = 'spooling'
+                            submitted = $_.CreationTime.ToString('o')
+                            totalPages = $null
+                            pagesPrinted = $null
+                            sizeBytes = $_.Length
+                        }
+                    }
+                }
+            } catch {}
+        }
+    }
+    
     $result += [PSCustomObject]@{
         name = $printer.Name
         status = $printer.PrinterStatus
@@ -1143,6 +1242,96 @@ def four_point_transform(image, pts, enforce_a4_ratio=True):
     warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))
 
     return warped
+
+
+def trim_shadow_edges(image, edge_percent=0.02, brightness_threshold=180):
+    """
+    Trim shadow edges from a warped document image.
+    Scans from each edge inward and trims dark/shadow regions.
+    
+    Args:
+        image: Input image (BGR or grayscale)
+        edge_percent: Percentage of image to scan from edges (default 2%)
+        brightness_threshold: Pixels below this are considered shadows
+    
+    Returns:
+        Trimmed image
+    """
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        is_color = True
+    else:
+        gray = image.copy()
+        is_color = False
+    
+    h, w = gray.shape
+    
+    # Calculate scan region size (how far from edge to check)
+    scan_h = max(int(h * edge_percent * 2), 30)  # At least 30 pixels
+    scan_w = max(int(w * edge_percent * 2), 30)
+    
+    # Minimum trim based on typical shadow width
+    min_trim = max(int(min(h, w) * 0.015), 15)  # 1.5% or at least 15px
+    
+    # Find shadow boundaries from each edge
+    # LEFT edge
+    left_trim = min_trim
+    for x in range(scan_w):
+        col = gray[:, x]
+        if np.mean(col) < brightness_threshold:
+            left_trim = max(left_trim, x + 5)
+        else:
+            break
+    
+    # RIGHT edge  
+    right_trim = min_trim
+    for x in range(w - 1, w - scan_w - 1, -1):
+        col = gray[:, x]
+        if np.mean(col) < brightness_threshold:
+            right_trim = max(right_trim, w - x + 5)
+        else:
+            break
+    
+    # TOP edge
+    top_trim = min_trim
+    for y in range(scan_h):
+        row = gray[y, :]
+        if np.mean(row) < brightness_threshold:
+            top_trim = max(top_trim, y + 5)
+        else:
+            break
+    
+    # BOTTOM edge
+    bottom_trim = min_trim
+    for y in range(h - 1, h - scan_h - 1, -1):
+        row = gray[y, :]
+        if np.mean(row) < brightness_threshold:
+            bottom_trim = max(bottom_trim, h - y + 5)
+        else:
+            break
+    
+    # Apply trim if any edge needs it
+    if left_trim > 0 or right_trim > 0 or top_trim > 0 or bottom_trim > 0:
+        y1 = top_trim
+        y2 = h - bottom_trim
+        x1 = left_trim
+        x2 = w - right_trim
+        
+        # Ensure we don't trim too much (max 10% from any edge)
+        max_trim_h = int(h * 0.10)
+        max_trim_w = int(w * 0.10)
+        
+        y1 = min(y1, max_trim_h)
+        y2 = max(y2, h - max_trim_h)
+        x1 = min(x1, max_trim_w)
+        x2 = max(x2, w - max_trim_w)
+        
+        if y2 > y1 and x2 > x1:
+            trimmed = image[y1:y2, x1:x2]
+            print(f"  ✓ Trimmed shadow edges: {w}x{h} -> {x2-x1}x{y2-y1} (L:{left_trim}, R:{right_trim}, T:{top_trim}, B:{bottom_trim})")
+            return trimmed
+    
+    return image
 
 
 def auto_crop_borders(image, threshold=30, min_crop_percent=0.02):
@@ -1497,11 +1686,11 @@ def find_document_contour(image):
                     elif avg_error < 30:
                         score += 15
 
-                # Factor 5: Method bonuses - prioritize paper detection methods
+                # Factor 5: Method bonuses - STRONGLY prioritize paper detection methods
                 if method == "ColorWhite":
-                    score += 70
+                    score += 120  # Strong bonus for white paper detection
                 elif method == "BrightnessDetect":
-                    score += 65  # Good for paper on dark backgrounds
+                    score += 100  # Good for paper on dark backgrounds
                 elif method.startswith("Canny"):
                     score += 10
                 elif method == "Laplacian":
@@ -1573,7 +1762,32 @@ def find_document_contour(image):
     if best is None:
         best = scored_candidates[0]
 
-    return best["contour"].reshape(4, 2).astype(np.float32)
+    # Apply corner inset to move corners inward and avoid shadow boundaries
+    contour = best["contour"].reshape(4, 2).astype(np.float32)
+    
+    # Calculate document size to scale inset appropriately
+    doc_width = np.max(contour[:, 0]) - np.min(contour[:, 0])
+    doc_height = np.max(contour[:, 1]) - np.min(contour[:, 1])
+    doc_diagonal = np.sqrt(doc_width**2 + doc_height**2)
+    
+    # Scale inset: ~2% of diagonal, minimum 25px, maximum 60px
+    inset_pixels = max(25, min(int(doc_diagonal * 0.02), 60))
+    
+    # Calculate center of document
+    center = contour.mean(axis=0)
+    
+    # Move each corner toward center to avoid shadows
+    refined = contour.copy()
+    for i in range(4):
+        direction = center - contour[i]
+        norm = np.linalg.norm(direction)
+        if norm > 0:
+            direction = direction / norm
+            refined[i] = contour[i] + direction * inset_pixels
+    
+    print(f"   Applied {inset_pixels}px corner inset for shadow removal")
+    
+    return refined
 
 
 def process_document_image(input_path, output_path, filename=None):
@@ -1635,6 +1849,9 @@ def process_document_image(input_path, output_path, filename=None):
         if doc_contour is not None:
             warped = four_point_transform(image, doc_contour)
             print(f"  ✓ Document cropped: {warped.shape[1]}x{warped.shape[0]}")
+            
+            # Trim shadow edges after perspective transform
+            warped = trim_shadow_edges(warped, edge_percent=0.02, brightness_threshold=160)
         else:
             warped = image
             print(f"  ✓ Using full image")
@@ -4021,19 +4238,28 @@ def run_ocr(filename):
         # Run OCR
         result = processor.process_image(image_path)
         
-        # Save result
-        json_path = processor.save_result(filename, result)
+        # Check if OCR actually succeeded (has text)
+        ocr_success = result.word_count > 0 and result.derived_title not in ["Error Processing Document", "Untitled Document"]
+        
+        # Save result only if successful
+        json_path = None
+        if ocr_success:
+            json_path = processor.save_result(filename, result)
         
         # Prepare response
         response_data = {
-            "success": True,
+            "success": ocr_success,
             "filename": filename,
-            "ocr_result": result.to_dict(),
-            "ocr_ready": True,
+            "ocr_result": result.to_dict() if ocr_success else None,
+            "ocr_ready": ocr_success,
+            "error": None if ocr_success else "OCR could not extract any text from the image"
         }
         
-        print(f"✅ OCR complete: {result.word_count} words, {len(result.raw_results)} regions")
-        print(f"   Derived title: {result.derived_title}")
+        if ocr_success:
+            print(f"✅ OCR complete: {result.word_count} words, {len(result.raw_results)} regions")
+            print(f"   Derived title: {result.derived_title}")
+        else:
+            print(f"⚠️ OCR found no text in: {filename}")
         print(f"   Processing time: {result.processing_time_ms:.0f}ms")
         print(f"{'='*60}\n")
 
@@ -4041,9 +4267,9 @@ def run_ocr(filename):
         try:
             socketio.emit("ocr_complete", {
                 "filename": filename,
-                "success": True,
-                "result": result.to_dict(),  # Include full result for UI update
-                "derived_title": result.derived_title,
+                "success": ocr_success,
+                "result": result.to_dict() if ocr_success else None,
+                "derived_title": result.derived_title if ocr_success else None,
                 "word_count": result.word_count,
                 "confidence": result.confidence_avg,
                 "has_text": result.word_count > 0,
@@ -5336,6 +5562,23 @@ def process_voice_complete():
                         "session_ended": result.get("session_ended", False),
                     },
                 )
+                
+                # Emit config updates if settings were changed via voice command
+                if result.get("settings_updated") or result.get("config_updates"):
+                    config_updates = result.get("config_updates", result.get("command_params", {}))
+                    voice_command = result.get("voice_command")
+                    
+                    logger.info(f"[SETTINGS] Emitting config update: {voice_command} -> {config_updates}")
+                    
+                    socketio.emit(
+                        "config_update",
+                        {
+                            "type": "voice_settings_update",
+                            "voice_command": voice_command,
+                            "updates": config_updates,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
             except Exception as socket_error:
                 logger.warning(f"Socket.IO emit failed: {socket_error}")
 

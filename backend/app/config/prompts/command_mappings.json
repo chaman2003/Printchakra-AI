@@ -57,7 +57,8 @@
     ],
     "set_layout": [
       "portrait", "landscape", "vertical", "horizontal", "portrait mode", 
-      "landscape mode", "portrait orientation", "landscape orientation"
+      "landscape mode", "portrait orientation", "landscape orientation",
+      "landscsape", "landcape", "lanscape", "portait", "sideways", "upright"
     ],
     "set_paper_size": [
       "a4", "letter", "legal", "a3", "a5", "paper size", "page size"
@@ -259,7 +260,7 @@
       "temperature": 0.7,
       "top_p": 0.9,
       "top_k": 40,
-      "num_predict": 50,
+      "num_predict": 100,
       "num_ctx": 2048,
       "repeat_penalty": 1.2,
       "stop": ["\\n\\n", "User:", "Assistant:"]

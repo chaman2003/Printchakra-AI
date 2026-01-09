@@ -17,6 +17,15 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from app.config.settings import AI_PROMPT_CONFIG, CONNECTION_CONFIG
 
+# Import chat_flow for unified workflow orchestration
+try:
+    from app.chat_flow import chat_flow_service, ChatFlowResponse
+    CHAT_FLOW_AVAILABLE = True
+except ImportError:
+    CHAT_FLOW_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("[WARN] Chat flow module not available")
+
 if TYPE_CHECKING:
     from .voice_prompt import VoicePromptManager as VoicePromptManagerType
 else:
@@ -100,14 +109,15 @@ _tts_initialized_once = False  # Track if we've logged TTS init
 
 def truncate_to_word_count(text: str, max_words: int = 20) -> str:
     """
-    Truncate text to maximum word count for TTS output
+    Truncate text to approximately maximum word count for TTS output,
+    but always complete the current sentence to avoid cut-off responses.
     
     Args:
         text: Text to truncate
-        max_words: Maximum number of words to keep (default 20)
+        max_words: Target maximum number of words (may exceed to complete sentence)
         
     Returns:
-        Text truncated to max_words if needed (no ellipsis added)
+        Text truncated at sentence boundary closest to max_words
     """
     if not text or not text.strip():
         return text
@@ -116,8 +126,40 @@ def truncate_to_word_count(text: str, max_words: int = 20) -> str:
     if len(words) <= max_words:
         return text
     
-    # Return first max_words (no ellipsis - response should be complete naturally)
-    return " ".join(words[:max_words])
+    # Find sentence boundaries (., !, ?)
+    sentence_endings = ['.', '!', '?']
+    
+    # Build text word by word and track sentence boundaries
+    result_words = []
+    last_sentence_end_idx = -1
+    
+    for i, word in enumerate(words):
+        result_words.append(word)
+        
+        # Check if this word ends a sentence
+        if any(word.rstrip(')"\'').endswith(end) for end in sentence_endings):
+            last_sentence_end_idx = i
+            
+            # If we've reached or passed max_words, stop at this sentence
+            if i + 1 >= max_words:
+                break
+    
+    # If we found a sentence ending, use it
+    if last_sentence_end_idx >= 0:
+        return " ".join(result_words[:last_sentence_end_idx + 1])
+    
+    # No sentence ending found - look ahead for the next sentence ending (up to 10 more words)
+    max_lookahead = min(len(words), max_words + 10)
+    for i in range(max_words, max_lookahead):
+        word = words[i]
+        if any(word.rstrip(')"\'').endswith(end) for end in sentence_endings):
+            return " ".join(words[:i + 1])
+    
+    # Still no sentence ending - just return at max_words with period
+    truncated = " ".join(words[:max_words])
+    if not any(truncated.endswith(end) for end in sentence_endings):
+        truncated = truncated.rstrip(',;:') + "."
+    return truncated
 
 
 def _init_tts_engine():
@@ -887,7 +929,7 @@ class VoiceChatService:
 
 
 
-        # Parse range document selection (e.g., "select documents 1 to 5")
+        # Parse range document selection (e.g., "select documents 1 to 5", "select from 1 to 5")
         if command_type == "select_document_range":
             # Extract section keywords
             if any(keyword in text_lower for keyword in ["original", "current", "recent"]):
@@ -897,16 +939,31 @@ class VoiceChatService:
             else:
                 params["section"] = "current"
             
-            # Extract range using various patterns
+            # Word to number mapping for spoken numbers
+            word_to_num = {
+                "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+                "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+                "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5
+            }
+            
+            # Replace word numbers with digits for easier parsing
+            processed_text = text_lower
+            for word, num in word_to_num.items():
+                processed_text = re.sub(rf'\b{word}\b', str(num), processed_text)
+            
+            # Extract range using various patterns (order matters - most specific first)
             range_patterns = [
+                r'from\s+(\d+)\s+to\s+(\d+)',  # from 1 to 5 - PRIORITY
+                r'select\s+from\s+(\d+)\s+to\s+(\d+)',  # select from 1 to 5
                 r'(\d+)\s+(?:to|through)\s+(\d+)',  # 1 to 5
-                r'from\s+(\d+)\s+to\s+(\d+)',  # from 1 to 5
                 r'between\s+(\d+)\s+(?:and|to)\s+(\d+)',  # between 1 and 5
+                r'documents?\s+(\d+)\s*(?:to|through|-|–)\s*(\d+)',  # documents 1 to 5, documents 1-5
                 r'(\d+)\s*-\s*(\d+)',  # 1-5
             ]
             
             for pattern in range_patterns:
-                match = re.search(pattern, text_lower)
+                match = re.search(pattern, processed_text)
                 if match:
                     start = int(match.group(1))
                     end = int(match.group(2))
@@ -1187,6 +1244,197 @@ class VoiceChatService:
         
         return params
 
+    def _generate_command_response(self, voice_command: str, command_params: Dict[str, Any], user_message: str) -> str:
+        """
+        Generate a descriptive response based on the detected command and its parameters.
+        This creates unified, contextual responses instead of generic "Processing..." messages.
+        
+        Args:
+            voice_command: The detected command type (e.g., "select_document_range")
+            command_params: Parsed parameters for the command
+            user_message: Original user message for context
+            
+        Returns:
+            A descriptive string response explaining what action will be taken
+        """
+        try:
+            # Document selection responses
+            if voice_command == "select_document_range":
+                start = command_params.get("start", 1)
+                end = command_params.get("end", 5)
+                section = command_params.get("section", "current")
+                return f"Selecting documents {start} to {end} from {section} section."
+            
+            elif voice_command == "select_document":
+                doc_num = command_params.get("document_number", 1)
+                section = command_params.get("section", "current")
+                if doc_num == -1:
+                    return f"Selecting the last document from {section} section."
+                return f"Selecting document {doc_num} from {section} section."
+            
+            elif voice_command == "select_multiple_documents":
+                selection_type = command_params.get("selection_type", "first_n")
+                count = command_params.get("count", 2)
+                section = command_params.get("section", "current")
+                
+                if selection_type == "all" or count == -1:
+                    return f"Selecting all documents from {section} section."
+                elif selection_type == "last_n":
+                    return f"Selecting the last {count} documents from {section} section."
+                elif selection_type == "specific":
+                    doc_numbers = command_params.get("document_numbers", [])
+                    if doc_numbers:
+                        nums_str = ", ".join(str(n) for n in doc_numbers)
+                        return f"Selecting documents {nums_str} from {section} section."
+                    return f"Selecting {count} documents from {section} section."
+                else:
+                    return f"Selecting the first {count} documents from {section} section."
+            
+            elif voice_command == "select_specific_documents":
+                doc_numbers = command_params.get("document_numbers", [])
+                section = command_params.get("section", "current")
+                if doc_numbers:
+                    nums_str = ", ".join(str(n) for n in doc_numbers)
+                    return f"Selecting documents {nums_str} from {section} section."
+                return f"Selecting specific documents from {section} section."
+            
+            # Deselect responses
+            elif voice_command == "deselect_document":
+                deselect_type = command_params.get("deselect_type", "all")
+                section = command_params.get("section", "current")
+                
+                if command_params.get("deselect_all", False) or deselect_type == "all":
+                    return "Clearing all document selections."
+                elif deselect_type == "range":
+                    start = command_params.get("start", 1)
+                    end = command_params.get("end", 5)
+                    return f"Deselecting documents {start} to {end}."
+                elif deselect_type == "last_n":
+                    count = command_params.get("count", 2)
+                    return f"Deselecting the last {count} documents."
+                elif deselect_type == "first_n":
+                    count = command_params.get("count", 2)
+                    return f"Deselecting the first {count} documents."
+                elif deselect_type == "specific":
+                    doc_numbers = command_params.get("document_numbers", [])
+                    if doc_numbers:
+                        nums_str = ", ".join(str(n) for n in doc_numbers)
+                        return f"Deselecting documents {nums_str}."
+                return "Deselecting documents."
+            
+            # Print/scan operation responses
+            elif voice_command == "start_print":
+                return "Starting print operation with selected documents."
+            
+            elif voice_command == "start_scan":
+                return "Starting scan operation."
+            
+            elif voice_command == "stop_print":
+                return "Stopping current print operation."
+            
+            elif voice_command == "stop_scan":
+                return "Stopping current scan operation."
+            
+            # Configuration responses
+            elif voice_command == "set_color_mode":
+                color_mode = command_params.get("color_mode", "color")
+                mode_name = "grayscale" if color_mode == "bw" else "color"
+                return f"Setting print mode to {mode_name}."
+            
+            elif voice_command == "set_quality":
+                quality = command_params.get("quality", "normal")
+                return f"Setting print quality to {quality}."
+            
+            elif voice_command == "set_paper_size":
+                size = command_params.get("paper_size", "A4")
+                return f"Setting paper size to {size}."
+            
+            elif voice_command == "set_copies":
+                copies = command_params.get("copies", 1)
+                return f"Setting number of copies to {copies}."
+            
+            elif voice_command == "set_duplex":
+                duplex = command_params.get("duplex", False)
+                mode = "double-sided" if duplex else "single-sided"
+                return f"Setting {mode} printing."
+            
+            elif voice_command == "set_layout":
+                layout = command_params.get("layout", "portrait")
+                return f"Setting page layout to {layout}."
+            
+            elif voice_command == "set_pages":
+                pages = command_params.get("pages", "all")
+                custom_range = command_params.get("customRange", "")
+                if pages == "custom" and custom_range:
+                    return f"Setting page range to {custom_range}."
+                elif pages == "odd":
+                    return "Setting to print odd pages only."
+                elif pages == "even":
+                    return "Setting to print even pages only."
+                return "Setting to print all pages."
+            
+            elif voice_command == "set_resolution":
+                resolution = command_params.get("resolution", "300")
+                return f"Setting scan resolution to {resolution} DPI."
+            
+            elif voice_command == "set_format":
+                format_type = command_params.get("format", "pdf")
+                return f"Setting output format to {format_type.upper()}."
+            
+            elif voice_command == "set_margins":
+                margins = command_params.get("margins", "default")
+                return f"Setting margins to {margins}."
+            
+            elif voice_command == "set_feed_count":
+                count = command_params.get("count", 1)
+                return f"Setting document feed count to {count}."
+            
+            # Navigation responses
+            elif voice_command == "switch_section":
+                section = command_params.get("section", "current")
+                section_names = {"current": "Current Documents", "converted": "Converted Files", "upload": "Uploaded Files"}
+                section_name = section_names.get(section, section)
+                return f"Switching to {section_name} section."
+            
+            elif voice_command == "open_settings":
+                return "Opening settings panel."
+            
+            elif voice_command == "close_settings":
+                return "Closing settings panel."
+            
+            elif voice_command == "open_print_config":
+                return "Opening print configuration."
+            
+            elif voice_command == "open_scan_config":
+                return "Opening scan configuration."
+            
+            # Help and info
+            elif voice_command == "help":
+                return "Here are some commands you can use: 'select document 1', 'select from 1 to 5', 'start print', 'set color mode to grayscale', 'open settings'."
+            
+            elif voice_command == "status":
+                return "Checking current status..."
+            
+            # Capture operations
+            elif voice_command == "capture":
+                return "Capturing document image."
+            
+            elif voice_command == "start_capture":
+                return "Starting continuous capture mode."
+            
+            elif voice_command == "stop_capture":
+                return "Stopping capture mode."
+            
+            # Default fallback
+            else:
+                # Generate a basic response from the command name
+                command_display = voice_command.replace("_", " ").title()
+                return f"Processing: {command_display}."
+                
+        except Exception as e:
+            logger.error(f"Error generating command response: {e}")
+            return f"Processing your command: {user_message}"
+
 
     def interpret_voice_command(self, user_message: str) -> tuple[Optional[str], float]:
         """
@@ -1278,8 +1526,9 @@ class VoiceChatService:
             # PRIORITY CHECK: Detect RANGE selection patterns (1 to 5, between, from X to Y)
 
             range_patterns = [
+                r'select\s+from\s+(\d+)\s+to\s+(\d+)',  # select from 1 to 5 - NEW PRIORITY
+                r'from\s+(\d+)\s+to\s+(\d+)',  # from 1 to 5 - PRIORITY
                 r'(?:select\s+)?(?:documents?\s+)?(\d+)\s+(?:to|through)\s+(\d+)',  # 1 to 5, documents 1 to 5
-                r'from\s+(?:document\s+)?(\\d+)\s+to\s+(\d+)',  # from 1 to 5
                 r'between\s+(?:document\s+)?(\d+)\s+(?:and|to)\s+(\d+)',  # between 1 and 5
                 r'(?:select\s+)?documents?\s+(\d+)\s*-\s*(\d+)',  # documents 1-5
             ]
@@ -1537,6 +1786,81 @@ class VoiceChatService:
                     logger.info(f"[WARN] User said '{user_message}' instead of confirmation, clearing pending")
                     self.pending_orchestration = None
 
+            # ===== STEP 3.5: SETTINGS COMMANDS (landscape, portrait, color, copies, etc.) =====
+            # Check for voice commands and settings BEFORE sending to Ollama
+            voice_command, command_confidence = self.interpret_voice_command(user_message)
+            
+            # Check for multi-settings command (e.g., "landscape with 3 copies in color")
+            multi_settings = self._parse_multi_settings_command(user_message)
+            
+            if multi_settings.get("has_settings"):
+                settings = multi_settings.get("settings", {})
+                response_text = multi_settings.get("response", "Settings updated.")
+                tts_text = multi_settings.get("tts_response", response_text)
+                
+                logger.info(f"[SETTINGS] Detected settings command: {settings}")
+                
+                self.conversation_history.append({"role": "user", "content": user_message})
+                self.conversation_history.append({"role": "assistant", "content": response_text})
+                
+                # Determine voice command based on first setting type
+                detected_command = None
+                command_params = settings.copy()
+                
+                if "layout" in settings:
+                    detected_command = "set_layout"
+                elif "colorMode" in settings or "color_mode" in settings:
+                    detected_command = "set_color_mode"
+                elif "copies" in settings:
+                    detected_command = "set_copies"
+                elif "resolution" in settings:
+                    detected_command = "set_resolution"
+                elif "paper_size" in settings or "paperSize" in settings:
+                    detected_command = "set_paper_size"
+                elif "quality" in settings:
+                    detected_command = "set_quality"
+                elif "duplex" in settings:
+                    detected_command = "set_duplex"
+                elif "format" in settings:
+                    detected_command = "set_format"
+                
+                return {
+                    "success": True,
+                    "response": response_text,
+                    "tts_response": tts_text,
+                    "model": self.model_name,
+                    "timestamp": datetime.now().isoformat(),
+                    "tts_enabled": TTS_AVAILABLE,
+                    "spoken": False,
+                    "voice_command": detected_command,
+                    "command_params": command_params,
+                    "settings_updated": True,
+                    "config_updates": settings,
+                }
+            
+            # Check for single voice command (document selection, navigation, etc.)
+            if voice_command and command_confidence >= 0.8:
+                command_params = self._parse_command_parameters(user_message, voice_command)
+                
+                # Generate DESCRIPTIVE response for the command using actual params
+                response_text = self._generate_command_response(voice_command, command_params, user_message)
+                logger.info(f"[VOICE_CMD] Detected command: {voice_command} with params: {command_params}")
+                
+                self.conversation_history.append({"role": "user", "content": user_message})
+                self.conversation_history.append({"role": "assistant", "content": response_text})
+                
+                return {
+                    "success": True,
+                    "response": response_text,
+                    "tts_response": response_text,
+                    "model": self.model_name,
+                    "timestamp": datetime.now().isoformat(),
+                    "tts_enabled": TTS_AVAILABLE,
+                    "spoken": False,
+                    "voice_command": voice_command,
+                    "command_params": command_params,
+                }
+
             # ===== STEP 4: GENERAL CONVERSATION → ASK OLLAMA =====
             self.conversation_history.append({"role": "user", "content": user_message})
 
@@ -1557,7 +1881,7 @@ class VoiceChatService:
                         "temperature": 0.7,
                         "top_p": 0.9,
                         "top_k": 40,
-                        "num_predict": 50,
+                        "num_predict": 100,
                         "num_ctx": 1024,
                         "repeat_penalty": 1.2,
                         "stop": ["\n\n", "User:", "Assistant:"],
@@ -1723,10 +2047,15 @@ class VoiceChatService:
             params["colorMode"] = "color"
 
 
-        # Layout detection
-        if contains_any(["landscape", "horizontal", "wide"]):
+        # Layout detection - include common typos from speech recognition
+        landscape_variants = ["landscape", "landscsape", "landcape", "lanscape", "landcsape", 
+                             "horizontal", "wide", "sideways", "land scape", "lands cape"]
+        portrait_variants = ["portrait", "portait", "portraite", "vertical", "tall", 
+                            "upright", "normal orientation"]
+        
+        if contains_any(landscape_variants):
             params["layout"] = "landscape"
-        elif contains_any(["portrait", "vertical", "tall"]):
+        elif contains_any(portrait_variants):
             params["layout"] = "portrait"
 
         # Resolution detection
@@ -1867,6 +2196,12 @@ class VoiceAIOrchestrator:
         self.whisper_service = WhisperTranscriptionService()
         self.chat_service = VoiceChatService()
         self.session_active = False
+        
+        # Use chat_flow_service for unified workflow orchestration
+        self.use_chat_flow = CHAT_FLOW_AVAILABLE
+        if self.use_chat_flow:
+            self.chat_flow_service = chat_flow_service
+            logger.info("[OK] Voice AI using unified ChatFlowService for workflow orchestration")
 
         # Initialize TTS in background thread (non-blocking to prevent COM hang)
         def init_tts_bg():
@@ -1898,6 +2233,11 @@ class VoiceAIOrchestrator:
             # Reset conversation
             self.chat_service.reset_conversation()
             self.session_active = True
+            
+            # Start chat flow session if available
+            if self.use_chat_flow:
+                self.chat_flow_service.start_session()
+                logger.info("[OK] ChatFlow session started with voice AI")
 
             # logger.info("[OK] Voice AI session started")
             return {
@@ -2008,6 +2348,9 @@ class VoiceAIOrchestrator:
             # Check for exit keyword
             if "bye printchakra" in user_text_lower or "goodbye" in user_text_lower:
                 self.session_active = False
+                # End chat flow session if active
+                if self.use_chat_flow:
+                    self.chat_flow_service.end_session()
                 return {
                     "success": True,
                     "user_text": user_text,
@@ -2016,8 +2359,45 @@ class VoiceAIOrchestrator:
                     "requires_keyword": False,
                 }
 
-            # Step 2: Generate AI response (wake word validated)
-            chat_response = self.chat_service.generate_response(user_text)
+            # Step 2: Process through ChatFlowService for workflow orchestration
+            # Fall back to VoiceChatService for general conversation
+            chat_response = None
+            
+            if self.use_chat_flow and self.chat_flow_service.session_active:
+                try:
+                    # Use ChatFlowService for workflow commands
+                    flow_response: ChatFlowResponse = self.chat_flow_service.process_text(user_text)
+                    
+                    # Convert ChatFlowResponse to dict format expected by voice module
+                    chat_response = {
+                        "success": flow_response.success,
+                        "response": flow_response.ai_response,
+                        "tts_response": flow_response.tts_response or flow_response.ai_response,
+                        "voice_command": flow_response.voice_command,
+                        "command_params": flow_response.command_params or {},
+                        "model": "chat_flow",
+                        "timestamp": datetime.now().isoformat(),
+                        "tts_enabled": TTS_AVAILABLE,
+                        "spoken": False,
+                        # Forward ChatFlow specific fields
+                        "current_step": flow_response.current_step.value,
+                        "open_document_selector": flow_response.open_document_selector,
+                        "open_config_panel": flow_response.open_config_panel,
+                        "open_review_panel": flow_response.open_review_panel,
+                        "execute_job": flow_response.execute_job,
+                        "config_updates": flow_response.config_updates,
+                        "interaction_mode": flow_response.interaction_mode,
+                    }
+                    
+                    logger.info(f"[CHAT_FLOW] Processed via ChatFlowService: {flow_response.current_step} | Mode: {flow_response.interaction_mode}")
+                    
+                except Exception as e:
+                    logger.error(f"[ERROR] ChatFlow processing failed: {e}, falling back to VoiceChatService")
+                    chat_response = None
+            
+            # Fall back to VoiceChatService if ChatFlow not available or failed
+            if not chat_response:
+                chat_response = self.chat_service.generate_response(user_text)
 
             if not chat_response.get("success"):
                 return {
@@ -2029,18 +2409,31 @@ class VoiceAIOrchestrator:
                 }
 
             ai_response = chat_response.get("response", "")
-            tts_response = truncate_to_word_count(
-                chat_response.get("tts_response", ai_response),
-                max_words=20
-            )
+            # TTS should speak exactly what's displayed in the chat
+            # Use truncate_to_word_count to keep it reasonable length but complete sentences
+            ai_response = truncate_to_word_count(ai_response, max_words=25)
+            tts_response = chat_response.get("tts_response", ai_response)  # Use tts_response from chat_flow if available
+            
+            # If tts_response wasn't provided, sync it with ai_response
+            if not tts_response or tts_response == ai_response:
+                tts_response = ai_response  # TTS says exactly what's displayed
+            
             voice_command = chat_response.get("voice_command")
             command_params = chat_response.get("command_params", {})
+            
+            # Forward ChatFlow specific fields
+            current_step = chat_response.get("current_step")
+            open_document_selector = chat_response.get("open_document_selector", False)
+            open_config_panel = chat_response.get("open_config_panel", False)
+            open_review_panel = chat_response.get("open_review_panel", False)
+            execute_job = chat_response.get("execute_job", False)
+            config_updates = chat_response.get("config_updates")
             
             # IMPORTANT: Forward awaiting_confirmation and pending_mode from chat service
             awaiting_confirmation = chat_response.get("awaiting_confirmation", False)
             pending_mode = chat_response.get("pending_mode")
 
-            # Step 3: Check for orchestration triggers in AI response
+            # Step 3: Check for orchestration triggers in AI response (legacy support)
             orchestration_trigger = chat_response.get("orchestration_trigger")
             orchestration_mode = chat_response.get("orchestration_mode")
             
@@ -2061,16 +2454,15 @@ class VoiceAIOrchestrator:
                 
                 # Remove trigger from response (clean display text)
                 ai_response = ai_response.replace(trigger_text, "").strip()
-                # IMPORTANT: Keep tts_response in sync with ai_response
-                tts_response = truncate_to_word_count(ai_response, max_words=20)
+                # Keep tts_response in sync - TTS says what's displayed
+                ai_response = truncate_to_word_count(ai_response, max_words=25)
+                tts_response = ai_response
             
             # Step 4: Extract configuration parameters from user text
             config_params = self._extract_config_parameters(user_text_lower)
 
-            # FINAL SYNC: Ensure tts_response is always based on ai_response
-            # This catches any modifications made to ai_response after initial assignment
-            if tts_response != truncate_to_word_count(ai_response, max_words=20):
-                tts_response = truncate_to_word_count(ai_response, max_words=20)
+            # FINAL SYNC: Ensure tts_response always equals ai_response
+            tts_response = ai_response
 
             return {
                 "success": True,
@@ -2084,6 +2476,14 @@ class VoiceAIOrchestrator:
                 "model": chat_response.get("model"),
                 "session_ended": False,
                 "requires_keyword": False,
+                # ChatFlow workflow fields
+                "current_step": current_step,
+                "open_document_selector": open_document_selector,
+                "open_config_panel": open_config_panel,
+                "open_review_panel": open_review_panel,
+                "execute_job": execute_job,
+                "config_updates": config_updates,
+                # Legacy orchestration fields
                 "orchestration_trigger": orchestration_trigger,
                 "orchestration_mode": orchestration_mode,
                 "config_params": config_params,
@@ -2122,10 +2522,15 @@ class VoiceAIOrchestrator:
             params["colorMode"] = "color"
 
 
-        # Layout detection
-        if contains_any(["landscape", "horizontal", "wide"]):
+        # Layout detection - include common typos from speech recognition
+        landscape_variants = ["landscape", "landscsape", "landcape", "lanscape", "landcsape", 
+                             "horizontal", "wide", "sideways", "land scape", "lands cape"]
+        portrait_variants = ["portrait", "portait", "portraite", "vertical", "tall", 
+                            "upright", "normal orientation"]
+        
+        if contains_any(landscape_variants):
             params["layout"] = "landscape"
-        elif contains_any(["portrait", "vertical", "tall"]):
+        elif contains_any(portrait_variants):
             params["layout"] = "portrait"
 
         # Resolution detection
@@ -2252,6 +2657,12 @@ class VoiceAIOrchestrator:
         """End voice AI session"""
         self.session_active = False
         self.chat_service.reset_conversation()
+        
+        # End chat flow session if active
+        if self.use_chat_flow and self.chat_flow_service.session_active:
+            self.chat_flow_service.end_session()
+            logger.info("ChatFlow session ended with voice AI")
+        
         logger.info("Voice AI session ended")
         return {"success": True, "message": "Voice AI session ended"}
 
@@ -2290,3 +2701,24 @@ class VoiceAIOrchestrator:
 
 # Global orchestrator instance
 voice_ai_orchestrator = VoiceAIOrchestrator()
+
+
+def transcribe_audio_file(audio_path: str) -> Dict[str, Any]:
+    """
+    Transcribe an audio file to text.
+    
+    Args:
+        audio_path: Path to the audio file
+        
+    Returns:
+        Dict with transcription results
+    """
+    try:
+        with open(audio_path, 'rb') as f:
+            audio_data = f.read()
+        
+        transcriber = WhisperTranscriptionService()
+        return transcriber.transcribe_audio(audio_data)
+    except Exception as e:
+        logger.error(f"[ERROR] Transcription error: {e}")
+        return {"success": False, "error": str(e), "text": ""}

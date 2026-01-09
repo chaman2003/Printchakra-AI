@@ -157,14 +157,32 @@ class EnhancedDocumentPipeline:
                 "output_shape": denoised.shape,
             }
 
-            # ========== STEP 5: Edge Detection ==========
-            self.emit_progress(5, total_steps, "Edge Detection", "Finding document edges...")
-            edges = self.enhancer.apply_canny_edge_detection(denoised)
-            pipeline_stats["steps"]["step_5"] = {
-                "stage": "Edge Detection",
-                "method": "Canny",
-                "output_shape": edges.shape,
-            }
+            # ========== STEP 5: Edge Detection (Canny - matching notebook) ==========
+            self.emit_progress(5, total_steps, "Edge Detection", "Finding document edges with Canny...")
+            try:
+                # Use multi-scale Canny matching notebook: (30, 100), (50, 150), (75, 200)
+                edges = self.enhancer.apply_canny_edge_detection(
+                    denoised, use_multi_scale=True, debug=True
+                )
+                # Dilate edges to close small gaps (matching notebook)
+                edges = cv2.dilate(edges, np.ones((2, 2)), iterations=2)
+                
+                pipeline_stats["steps"]["step_5"] = {
+                    "stage": "Edge Detection",
+                    "method": "Canny Multi-Scale (30-100, 50-150, 75-200)",
+                    "output_shape": edges.shape,
+                    "edge_pixels": int(np.sum(edges > 0)),
+                }
+            except Exception as edge_err:
+                logger.warning(f"Edge detection failed: {edge_err}, using fallback")
+                # Fallback to simple Canny
+                edges = cv2.Canny(denoised, 50, 150)
+                pipeline_stats["steps"]["step_5"] = {
+                    "stage": "Edge Detection",
+                    "method": "Canny Fallback (50, 150)",
+                    "error": str(edge_err),
+                    "output_shape": edges.shape,
+                }
 
             # ========== STEP 6: Contour Detection ==========
             self.emit_progress(

@@ -93,8 +93,8 @@ def list_files():
         
         # Import OCR processor for checking OCR results
         try:
-            from app.features.document.ocr.services import get_ocr_processor
-            ocr_processor = get_ocr_processor(OCR_DATA_DIR)
+            from app.features.document.ocr.paddle_ocr_service import PaddleOCRService
+            ocr_processor = PaddleOCRService()
         except ImportError:
             ocr_processor = None
         

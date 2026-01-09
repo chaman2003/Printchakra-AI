@@ -480,7 +480,7 @@ const Dashboard: React.FC = () => {
   const [connectionRetries, setConnectionRetries] = useState(0);
 
   // Auto-capture delays from calibration
-  const { initialDelay, interCaptureDelay, isCalibrated } = useCalibration();
+  const { initialDelay, interCaptureDelay, isCalibrated, setInitialDelay, setInterCaptureDelay } = useCalibration();
 
   // PaddleOCR state - initialize from localStorage for persistence across page reloads
   const [ocrResults, setOcrResults] = useState<Record<string, OCRResult>>(() => {
@@ -550,6 +550,11 @@ const Dashboard: React.FC = () => {
   // Orchestrate Print & Capture state
   const [orchestrateStep, setOrchestrateStep] = useState<number>(1); // 1=mode, 2=options, 3=confirm
   const [orchestrateMode, setOrchestrateMode] = useState<'scan' | 'print' | null>(null);
+  const orchestrateModeRef = React.useRef<'scan' | 'print' | null>(null);
+  // Keep ref in sync with state
+  React.useEffect(() => {
+    orchestrateModeRef.current = orchestrateMode;
+  }, [orchestrateMode]);
   // For scan mode: track whether user wants to select/upload documents or use feed tray
   const [scanDocumentSource, setScanDocumentSource] = useState<'select' | 'feed' | null>(null);
   // Track if user manually closed document selector to prevent auto-reopening
@@ -3083,23 +3088,47 @@ const Dashboard: React.FC = () => {
     const ocrCompleteListener = (data: any) => {
       console.log('OCR complete:', data);
       if (data?.filename && data?.success && data?.result) {
-        // Store the OCR result
-        setOcrResults(prev => ({ ...prev, [data.filename]: data.result }));
+        const newFilename = data.filename;
+        const oldFilename = data.original_filename || data.filename;
+        const wasRenamed = data.renamed || (oldFilename !== newFilename);
+        
+        // Store the OCR result with new filename
+        setOcrResults(prev => ({ ...prev, [newFilename]: data.result }));
 
-        // Update file's has_text status
-        setFiles((prevFiles: FileInfo[]) =>
-          prevFiles.map(f =>
-            f.filename === data.filename ? { ...f, has_text: true } : f
-          )
-        );
+        // Update file list - rename if needed
+        setFiles((prevFiles: FileInfo[]) => {
+          if (wasRenamed) {
+            // Remove old file, add renamed file
+            return prevFiles.map(f =>
+              f.filename === oldFilename
+                ? { ...f, filename: newFilename, has_text: true }
+                : f
+            );
+          } else {
+            // Just update has_text status
+            return prevFiles.map(f =>
+              f.filename === newFilename ? { ...f, has_text: true } : f
+            );
+          }
+        });
 
-        // Clear loading state
-        setOcrLoading(prev => ({ ...prev, [data.filename]: false }));
+        // Clear loading state for both old and new filenames
+        setOcrLoading(prev => {
+          const updated = { ...prev };
+          delete updated[oldFilename];
+          delete updated[newFilename];
+          return updated;
+        });
+
+        // If OCR view is open for the old filename, update it
+        if (activeOCRView === oldFilename && wasRenamed) {
+          setActiveOCRView(newFilename);
+        }
 
         toast({
-          title: '📄 OCR Complete',
+          title: wasRenamed ? '📄 OCR Complete - File Renamed' : '📄 OCR Complete',
           description: data.result.derived_title
-            ? `"${data.result.derived_title}"`
+            ? `"${data.result.derived_title}"${wasRenamed ? '\n✨ File automatically renamed' : ''}`
             : `Processed ${data.result.word_count} words`,
           status: 'success',
           duration: 4000,
@@ -3107,6 +3136,88 @@ const Dashboard: React.FC = () => {
       }
     };
     socket.on('ocr_complete', ocrCompleteListener);
+
+    // Listen for config updates from voice commands (settings like layout, color mode, etc.)
+    const configUpdateListener = (data: any) => {
+      console.log('Config update from voice:', data);
+      if (data?.updates) {
+        const updates = data.updates;
+        const currentMode = orchestrateModeRef.current;
+        
+        setOrchestrateOptions(prev => {
+          const newOptions = { ...prev };
+          
+          // Map voice config keys to orchestrate options
+          if (updates.layout) {
+            if (currentMode === 'print') {
+              newOptions.printLayout = updates.layout;
+            } else if (currentMode === 'scan') {
+              newOptions.scanLayout = updates.layout;
+            }
+          }
+          if (updates.colorMode || updates.color_mode) {
+            const colorMode = updates.colorMode || updates.color_mode;
+            if (currentMode === 'print') {
+              newOptions.printColorMode = colorMode;
+            } else if (currentMode === 'scan') {
+              newOptions.scanColorMode = colorMode;
+            }
+          }
+          if (updates.paperSize || updates.paper_size) {
+            const paperSize = updates.paperSize || updates.paper_size;
+            if (currentMode === 'print') {
+              newOptions.printPaperSize = paperSize;
+            } else if (currentMode === 'scan') {
+              newOptions.scanPaperSize = paperSize;
+            }
+          }
+          if (updates.resolution) {
+            if (currentMode === 'print') {
+              newOptions.printResolution = String(updates.resolution);
+            } else if (currentMode === 'scan') {
+              newOptions.scanResolution = String(updates.resolution);
+            }
+          }
+          if (updates.copies) {
+            newOptions.printCopies = String(updates.copies);
+          }
+          if (updates.duplex !== undefined) {
+            newOptions.printDuplex = updates.duplex;
+          }
+          if (updates.quality) {
+            newOptions.printQuality = updates.quality;
+          }
+          
+          return newOptions;
+        });
+        
+        // Show toast for settings update
+        const updateDesc = Object.entries(updates)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(', ');
+        toast({
+          title: 'Settings Updated',
+          description: updateDesc,
+          status: 'success',
+          duration: 2000,
+        });
+      }
+    };
+    socket.on('config_update', configUpdateListener);
+
+    // Listen for delay settings updates from other devices
+    const delaySettingsListener = (data: { initialDelay: number; interCaptureDelay: number; timestamp: number }) => {
+      console.log('Delay settings updated from another device:', data);
+      setInitialDelay(data.initialDelay);
+      setInterCaptureDelay(data.interCaptureDelay);
+      toast({
+        title: '⚙️ Delay Settings Synced',
+        description: `Updated: ${data.initialDelay}s startup, ${data.interCaptureDelay}s between captures`,
+        status: 'info',
+        duration: 3000,
+      });
+    };
+    socket.on('delay_settings_updated', delaySettingsListener);
 
     loadFiles();
     loadConvertedFiles(); // Load converted files on component mount
@@ -3158,6 +3269,8 @@ const Dashboard: React.FC = () => {
       socket.off('orchestration_update', orchestrationUpdateListener);
       socket.off('auto_capture_state_changed', autoCaptureStateListener);
       socket.off('ocr_complete', ocrCompleteListener);
+      socket.off('config_update', configUpdateListener);
+      socket.off('delay_settings_updated', delaySettingsListener);
       // -- startPolling cleaned up
     };
   }, [socket, toast]);
@@ -3357,20 +3470,33 @@ const Dashboard: React.FC = () => {
       }
 
       if (response.success && response.ocr_result) {
-        // Store the OCR result
-        setOcrResults(prev => ({ ...prev, [filename]: response.ocr_result! }));
+        const newFilename = response.filename || filename;
+        const wasRenamed = newFilename !== filename;
+        
+        // Store the OCR result with new filename
+        setOcrResults(prev => ({ ...prev, [newFilename]: response.ocr_result! }));
 
-        // Update file's has_text status
-        setFiles(prev => prev.map(f =>
-          f.filename === filename ? { ...f, has_text: true } : f
-        ));
+        // Update file list - rename if needed
+        setFiles(prev => {
+          if (wasRenamed) {
+            return prev.map(f =>
+              f.filename === filename
+                ? { ...f, filename: newFilename, has_text: true }
+                : f
+            );
+          } else {
+            return prev.map(f =>
+              f.filename === filename ? { ...f, has_text: true } : f
+            );
+          }
+        });
 
         const elapsedSeconds = (response.ocr_result.processing_time_ms / 1000).toFixed(1);
 
         toast({
-          title: '✅ OCR Complete',
+          title: wasRenamed ? '✅ OCR Complete - File Renamed' : '✅ OCR Complete',
           description: response.ocr_result.derived_title
-            ? `Document: "${response.ocr_result.derived_title}"\n${response.ocr_result.word_count} words • ${elapsedSeconds}s`
+            ? `Document: "${response.ocr_result.derived_title}"\n${response.ocr_result.word_count} words • ${elapsedSeconds}s${wasRenamed ? '\n✨ File automatically renamed' : ''}`
             : `Processed ${response.ocr_result.word_count} words in ${elapsedSeconds}s`,
           status: 'success',
           duration: 5000,
@@ -4647,6 +4773,14 @@ const Dashboard: React.FC = () => {
                   <OCRStructuredView
                     result={ocrResults[activeOCRView]}
                     filename={activeOCRView}
+                    imageUrl={`${API_BASE_URL}${API_ENDPOINTS.processed}/${activeOCRView}`}
+                    onRetry={() => {
+                      if (activeOCRView) {
+                        handleRunOCR(activeOCRView);
+                      }
+                    }}
+                    isRetrying={!!(activeOCRView && ocrLoading[activeOCRView])}
+                    onClose={closeOCRView}
                   />
                 )}
               </ModalBody>
@@ -4654,6 +4788,24 @@ const Dashboard: React.FC = () => {
                 <Button variant="ghost" mr={3} onClick={closeOCRView}>
                   Close
                 </Button>
+                {/* Show retry button in footer if OCR failed */}
+                {activeOCRView && ocrResults[activeOCRView] && 
+                  (ocrResults[activeOCRView].word_count === 0 || !ocrResults[activeOCRView].full_text) && (
+                  <Button
+                    colorScheme="blue"
+                    leftIcon={<Iconify icon="mdi:refresh" boxSize={5} />}
+                    mr={3}
+                    onClick={() => {
+                      if (activeOCRView) {
+                        handleRunOCR(activeOCRView);
+                      }
+                    }}
+                    isLoading={!!(activeOCRView && ocrLoading[activeOCRView])}
+                    loadingText="Retrying..."
+                  >
+                    Retry OCR
+                  </Button>
+                )}
                 {activeOCRView && ocrResults[activeOCRView]?.full_text && (
                   <Button
                     colorScheme="brand"
@@ -5356,12 +5508,87 @@ const Dashboard: React.FC = () => {
                                       onRequestPageChange={nextPage =>
                                         bumpPreviewFocus({ page: nextPage, source: 'manual' })
                                       }
+                                      ocrResult={selectedDocuments[previewControl.docIndex ?? 0] ? ocrResults[selectedDocuments[previewControl.docIndex ?? 0].filename] : undefined}
+                                      textSelectionEnabled={true}
                                     />
                                   </Box>
                                 )}
 
                                 {/* Options Panel (RIGHT SIDE) */}
                                 <Stack spacing={3} order={{ base: 1, lg: 2 }}>
+                                  {/* Auto-Capture Delay Settings Display */}
+                                  <Box
+                                    p={4}
+                                    borderRadius="lg"
+                                    border="2px solid"
+                                    borderColor={isCalibrated ? 'green.400' : 'orange.400'}
+                                    bg={useColorModeValue(
+                                      isCalibrated ? 'green.50' : 'orange.50',
+                                      isCalibrated ? 'rgba(34, 197, 94, 0.1)' : 'rgba(237, 137, 54, 0.1)'
+                                    )}
+                                    transition="all 0.3s"
+                                  >
+                                    <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
+                                      <HStack spacing={2}>
+                                        <Iconify
+                                          icon="solar:clock-circle-bold"
+                                          width={20}
+                                          height={20}
+                                          color={isCalibrated ? 'var(--chakra-colors-green-500)' : 'var(--chakra-colors-orange-500)'}
+                                        />
+                                        <Heading size="sm" color={useColorModeValue('gray.700', 'gray.200')}>
+                                          Auto-Capture Timing
+                                        </Heading>
+                                        <Badge
+                                          colorScheme={isCalibrated ? 'green' : 'orange'}
+                                          fontSize="xs"
+                                        >
+                                          {isCalibrated ? 'Configured' : 'Default'}
+                                        </Badge>
+                                      </HStack>
+                                      <HStack spacing={3} flexWrap="wrap">
+                                        <Tooltip
+                                          label="Time to wait for smartphone camera to initialize before capturing first document"
+                                          placement="top"
+                                          hasArrow
+                                        >
+                                          <Badge
+                                            colorScheme="purple"
+                                            fontSize="sm"
+                                            px={3}
+                                            py={2}
+                                            borderRadius="lg"
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={2}
+                                          >
+                                            <Text fontWeight="500">Startup:</Text>
+                                            <Text fontWeight="bold" fontSize="md">{initialDelay}s</Text>
+                                          </Badge>
+                                        </Tooltip>
+                                        <Tooltip
+                                          label="Delay between consecutive document captures"
+                                          placement="top"
+                                          hasArrow
+                                        >
+                                          <Badge
+                                            colorScheme="orange"
+                                            fontSize="sm"
+                                            px={3}
+                                            py={2}
+                                            borderRadius="lg"
+                                            display="flex"
+                                            alignItems="center"
+                                            gap={2}
+                                          >
+                                            <Text fontWeight="500">Between:</Text>
+                                            <Text fontWeight="bold" fontSize="md">{interCaptureDelay}s</Text>
+                                          </Badge>
+                                        </Tooltip>
+                                      </HStack>
+                                    </Flex>
+                                  </Box>
+
                                   {/* Select Document Button - Only show if user chose 'select' source */}
                                   {scanDocumentSource === 'select' && (
                                     <Button
@@ -5436,7 +5663,17 @@ const Dashboard: React.FC = () => {
                                             min={1}
                                             max={50}
                                             value={documentsToFeed}
-                                            onChange={(e) => setDocumentsToFeed(Math.max(1, parseInt(e.target.value) || 1))}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              if (val === '' || val === '-' || val === '+') {
+                                                setDocumentsToFeed(1);
+                                              } else {
+                                                const num = parseInt(val);
+                                                if (!isNaN(num)) {
+                                                  setDocumentsToFeed(Math.max(1, Math.min(50, num)));
+                                                }
+                                              }
+                                            }}
                                             size="lg"
                                             borderColor="orange.300"
                                             _hover={{ borderColor: 'orange.400' }}
@@ -6025,11 +6262,86 @@ const Dashboard: React.FC = () => {
                                 onRequestPageChange={nextPage =>
                                   bumpPreviewFocus({ page: nextPage, source: 'manual' })
                                 }
+                                ocrResult={selectedDocuments[previewControl.docIndex ?? 0] ? ocrResults[selectedDocuments[previewControl.docIndex ?? 0].filename] : undefined}
+                                textSelectionEnabled={true}
                               />
                             </Box>
 
                             {/* Options Panel (RIGHT SIDE) */}
                             <Stack spacing={3} order={{ base: 1, lg: 2 }}>
+                              {/* Auto-Capture Delay Settings Display */}
+                              <Box
+                                p={4}
+                                borderRadius="lg"
+                                border="2px solid"
+                                borderColor={isCalibrated ? 'green.400' : 'orange.400'}
+                                bg={useColorModeValue(
+                                  isCalibrated ? 'green.50' : 'orange.50',
+                                  isCalibrated ? 'rgba(34, 197, 94, 0.1)' : 'rgba(237, 137, 54, 0.1)'
+                                )}
+                                transition="all 0.3s"
+                              >
+                                <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
+                                  <HStack spacing={2}>
+                                    <Iconify
+                                      icon="solar:clock-circle-bold"
+                                      width={20}
+                                      height={20}
+                                      color={isCalibrated ? 'var(--chakra-colors-green-500)' : 'var(--chakra-colors-orange-500)'}
+                                    />
+                                    <Heading size="sm" color={useColorModeValue('gray.700', 'gray.200')}>
+                                      Auto-Capture Timing
+                                    </Heading>
+                                    <Badge
+                                      colorScheme={isCalibrated ? 'green' : 'orange'}
+                                      fontSize="xs"
+                                    >
+                                      {isCalibrated ? 'Configured' : 'Default'}
+                                    </Badge>
+                                  </HStack>
+                                  <HStack spacing={3} flexWrap="wrap">
+                                    <Tooltip
+                                      label="Time to wait for smartphone camera to initialize before capturing first document"
+                                      placement="top"
+                                      hasArrow
+                                    >
+                                      <Badge
+                                        colorScheme="purple"
+                                        fontSize="sm"
+                                        px={3}
+                                        py={2}
+                                        borderRadius="lg"
+                                        display="flex"
+                                        alignItems="center"
+                                        gap={2}
+                                      >
+                                        <Text fontWeight="500">Startup:</Text>
+                                        <Text fontWeight="bold" fontSize="md">{initialDelay}s</Text>
+                                      </Badge>
+                                    </Tooltip>
+                                    <Tooltip
+                                      label="Delay between consecutive document captures"
+                                      placement="top"
+                                      hasArrow
+                                    >
+                                      <Badge
+                                        colorScheme="orange"
+                                        fontSize="sm"
+                                        px={3}
+                                        py={2}
+                                        borderRadius="lg"
+                                        display="flex"
+                                        alignItems="center"
+                                        gap={2}
+                                      >
+                                        <Text fontWeight="500">Between:</Text>
+                                        <Text fontWeight="bold" fontSize="md">{interCaptureDelay}s</Text>
+                                      </Badge>
+                                    </Tooltip>
+                                  </HStack>
+                                </Flex>
+                              </Box>
+
                               {/* Select Document Button */}
                               <Button
                                 size="lg"

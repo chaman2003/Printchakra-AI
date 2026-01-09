@@ -3,7 +3,7 @@
  * Displays OCR results in a structured, readable format with confidence indicators
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   VStack,
@@ -19,15 +19,21 @@ import {
   Tooltip,
   Flex,
   Heading,
+  Image,
+  Spinner,
 } from '@chakra-ui/react';
 import Iconify from '../common/Iconify';
+import { SelectableTextOverlay } from './SelectableTextOverlay';
 import { OCRResult, OCRStructuredUnit, OCRRawResult } from '../../types';
 
 interface OCRStructuredViewProps {
   ocrResult?: OCRResult;
   result?: OCRResult;  // Alternative prop name for compatibility
   filename?: string;
+  imageUrl?: string;  // URL to the document image for image view
   onClose?: () => void;
+  onRetry?: () => void;  // Callback to retry OCR
+  isRetrying?: boolean;  // Show loading state during retry
   maxHeight?: string;
 }
 
@@ -133,11 +139,19 @@ export const OCRStructuredView: React.FC<OCRStructuredViewProps> = ({
   ocrResult: ocrResultProp,
   result,
   filename,
+  imageUrl,
   onClose,
-  maxHeight = '400px',
+  onRetry,
+  isRetrying = false,
+  maxHeight = '70vh',
 }) => {
-  const [viewMode, setViewMode] = useState<'structured' | 'raw' | 'full'>('structured');
+  const [viewMode, setViewMode] = useState<'structured' | 'raw' | 'full' | 'image'>('structured');
   const [showStats, setShowStats] = useState(true);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(1);
+  const imageContainerRef = useRef<HTMLDivElement>(null);
+  const imageWrapperRef = useRef<HTMLDivElement>(null);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'whiteAlpha.200');
@@ -145,10 +159,72 @@ export const OCRStructuredView: React.FC<OCRStructuredViewProps> = ({
   // Support both prop names
   const ocrResult = ocrResultProp || result;
   
+  // Check if OCR failed (no results)
+  const isOCRFailed = ocrResult && (ocrResult.word_count === 0 || ocrResult.raw_results.length === 0);
+  
   if (!ocrResult) {
     return (
       <Box p={4} textAlign="center">
         <Text color="text.muted">No OCR result available</Text>
+        {onRetry && (
+          <Button
+            mt={3}
+            colorScheme="blue"
+            size="sm"
+            leftIcon={<Iconify icon="mdi:refresh" />}
+            onClick={onRetry}
+            isLoading={isRetrying}
+            loadingText="Running OCR..."
+          >
+            Run OCR
+          </Button>
+        )}
+      </Box>
+    );
+  }
+  
+  // Show retry UI if OCR failed
+  if (isOCRFailed) {
+    return (
+      <Box
+        bg={bgColor}
+        borderRadius="lg"
+        border="1px solid"
+        borderColor="orange.300"
+        overflow="hidden"
+        p={6}
+        textAlign="center"
+      >
+        <VStack spacing={4}>
+          <Iconify icon="mdi:alert-circle-outline" boxSize={12} color="orange.400" />
+          <Heading size="md" color="orange.400">OCR Could Not Extract Text</Heading>
+          <Text color="text.muted" fontSize="sm">
+            The OCR process completed but could not detect any text in the image.
+            This may happen if the image quality is low, text is too small, or the document is handwritten.
+          </Text>
+          <HStack spacing={3}>
+            {onRetry && (
+              <Button
+                colorScheme="blue"
+                leftIcon={<Iconify icon="mdi:refresh" />}
+                onClick={onRetry}
+                isLoading={isRetrying}
+                loadingText="Retrying OCR..."
+              >
+                Retry OCR
+              </Button>
+            )}
+            {onClose && (
+              <Button variant="ghost" onClick={onClose}>
+                Close
+              </Button>
+            )}
+          </HStack>
+          <Text fontSize="xs" color="text.muted">
+            Processing time: {ocrResult.processing_time_ms.toFixed(0)}ms • 
+            Image size: {ocrResult.image_dimensions[0]}×{ocrResult.image_dimensions[1]}
+          </Text>
+        </VStack>
       </Box>
     );
   }
@@ -248,6 +324,17 @@ export const OCRStructuredView: React.FC<OCRStructuredViewProps> = ({
         >
           Full Text
         </Button>
+        {imageUrl && (
+          <Button
+            size="xs"
+            variant={viewMode === 'image' ? 'solid' : 'ghost'}
+            colorScheme={viewMode === 'image' ? 'blue' : 'gray'}
+            onClick={() => setViewMode('image')}
+            leftIcon={<Iconify icon="mdi:image-text" boxSize={3} />}
+          >
+            Image
+          </Button>
+        )}
         <Box flex={1} />
         <IconButton
           aria-label="Toggle stats"
@@ -259,7 +346,7 @@ export const OCRStructuredView: React.FC<OCRStructuredViewProps> = ({
       </HStack>
 
       {/* Content */}
-      <Box maxH={maxHeight} overflowY="auto" p={3}>
+      <Box maxH={viewMode === 'image' ? 'none' : maxHeight} overflowY="auto" p={3}>
         {viewMode === 'structured' && hasStructured && (
           <VStack spacing={2} align="stretch">
             {ocrResult.structured_units.map((unit, i) => (
@@ -296,6 +383,115 @@ export const OCRStructuredView: React.FC<OCRStructuredViewProps> = ({
           <Text fontSize="sm" color="text.muted" textAlign="center" py={4}>
             No structured units available. View raw regions or full text.
           </Text>
+        )}
+
+        {viewMode === 'image' && imageUrl && (
+          <Box>
+            <HStack mb={2} justify="space-between">
+              <Text fontSize="xs" color="text.muted">
+                💡 Select text directly from the image to copy
+              </Text>
+              <HStack spacing={1}>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  leftIcon={<Iconify icon="mdi:minus" boxSize={4} />}
+                  onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
+                  isDisabled={zoom <= 0.5}
+                >
+                  Zoom Out
+                </Button>
+                <Text fontSize="xs" minW="45px" textAlign="center">
+                  {Math.round(zoom * 100)}%
+                </Text>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  leftIcon={<Iconify icon="mdi:plus" boxSize={4} />}
+                  onClick={() => setZoom(Math.min(3, zoom + 0.1))}
+                  isDisabled={zoom >= 3}
+                >
+                  Zoom In
+                </Button>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => setZoom(1)}
+                  isDisabled={zoom === 1}
+                >
+                  Reset
+                </Button>
+              </HStack>
+            </HStack>
+            <Box
+              ref={imageContainerRef}
+              display="flex"
+              justifyContent="center"
+              alignItems="center"
+              bg={useColorModeValue('gray.100', 'whiteAlpha.100')}
+              borderRadius="md"
+              overflow="auto"
+              h="calc(70vh - 160px)"
+              onWheel={(e: React.WheelEvent) => {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -0.05 : 0.05;
+                setZoom((prev) => Math.max(0.5, Math.min(3, prev + delta)));
+              }}
+            >
+              {!imageLoaded && (
+                <Spinner size="lg" color="brand.400" />
+              )}
+              {/* Image wrapper with overlay positioned on top */}
+              <Box
+                ref={imageWrapperRef}
+                position="relative"
+                display={imageLoaded ? 'inline-block' : 'none'}
+                transform={`scale(${zoom})`}
+                transformOrigin="top center"
+                transition="transform 0.2s ease-out"
+              >
+                <Image
+                  src={imageUrl}
+                  alt={filename || 'Document'}
+                  maxW="100%"
+                  maxH="calc(70vh - 160px)"
+                  objectFit="contain"
+                  display="block"
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                  sx={{ WebkitUserDrag: 'none' }}
+                  onLoad={(e) => {
+                    setImageLoaded(true);
+                    const img = e.currentTarget;
+                    // Use setTimeout to get accurate dimensions after render
+                    setTimeout(() => {
+                      setContainerSize({
+                        width: img.clientWidth,
+                        height: img.clientHeight,
+                      });
+                    }, 100);
+                  }}
+                />
+                {imageLoaded && containerSize.width > 0 && ocrResult && (
+                  <Box
+                    position="absolute"
+                    top={0}
+                    left={0}
+                    width={`${containerSize.width}px`}
+                    height={`${containerSize.height}px`}
+                  >
+                    <SelectableTextOverlay
+                      rawResults={ocrResult.raw_results}
+                      imageDimensions={ocrResult.image_dimensions}
+                      containerWidth={containerSize.width}
+                      containerHeight={containerSize.height}
+                      isActive={true}
+                    />
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          </Box>
         )}
       </Box>
     </Box>

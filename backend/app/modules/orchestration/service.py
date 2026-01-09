@@ -1062,6 +1062,148 @@ class PrintScanOrchestrator:
                 "message": "Orchestrator reset to idle state",
                 "current_state": self.current_state.value,
             }
+    
+    def reset(self) -> None:
+        """Reset the orchestrator state (alias for reset_state)."""
+        self.reset_state()
+    
+    def get_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get orchestration history.
+        
+        Args:
+            limit: Maximum number of history entries
+            
+        Returns:
+            List of history entries
+        """
+        return self.workflow_history[-limit:]
+    
+    def execute_print(self, files: List[str], settings: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute print workflow for files.
+        
+        Args:
+            files: List of filenames to print
+            settings: Print settings
+            
+        Returns:
+            Result dictionary
+        """
+        from datetime import datetime
+        
+        with self.state_lock:
+            self.current_state = WorkflowState.EXECUTING
+        
+        try:
+            # Log workflow entry
+            workflow_entry = {
+                "type": "print",
+                "files": files,
+                "settings": settings,
+                "timestamp": datetime.now().isoformat(),
+                "status": "executing"
+            }
+            
+            # Import print service
+            try:
+                from app.features.print.services.print_job_service import PrintJobService
+                job_service = PrintJobService()
+                
+                results = []
+                for filename in files:
+                    copies = settings.get("copies", 1)
+                    result = job_service.print_document(filename, copies)
+                    results.append({
+                        "filename": filename,
+                        "success": result.get("success", False),
+                        "message": result.get("message") or result.get("error")
+                    })
+                
+                success_count = sum(1 for r in results if r["success"])
+                
+                workflow_entry["status"] = "completed" if success_count > 0 else "failed"
+                workflow_entry["results"] = results
+                self.workflow_history.append(workflow_entry)
+                
+                with self.state_lock:
+                    self.current_state = WorkflowState.COMPLETED if success_count > 0 else WorkflowState.FAILED
+                
+                return {
+                    "success": success_count > 0,
+                    "message": f"Printed {success_count}/{len(files)} files",
+                    "results": results
+                }
+            
+            except ImportError as e:
+                workflow_entry["status"] = "failed"
+                workflow_entry["error"] = "Print service not available"
+                self.workflow_history.append(workflow_entry)
+                
+                with self.state_lock:
+                    self.current_state = WorkflowState.FAILED
+                
+                return {
+                    "success": False,
+                    "error": "Print service not available"
+                }
+        
+        except Exception as e:
+            with self.state_lock:
+                self.current_state = WorkflowState.FAILED
+            
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def execute_scan(self, settings: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute scan workflow.
+        
+        Args:
+            settings: Scan settings
+            
+        Returns:
+            Result dictionary
+        """
+        from datetime import datetime
+        
+        with self.state_lock:
+            self.current_state = WorkflowState.EXECUTING
+        
+        try:
+            workflow_entry = {
+                "type": "scan",
+                "settings": settings,
+                "timestamp": datetime.now().isoformat(),
+                "status": "executing"
+            }
+            
+            # For now, scanning is typically triggered from a different endpoint
+            # This is a placeholder for orchestrated scan operations
+            
+            workflow_entry["status"] = "completed"
+            workflow_entry["message"] = "Scan operation initiated"
+            self.workflow_history.append(workflow_entry)
+            
+            with self.state_lock:
+                self.current_state = WorkflowState.COMPLETED
+            
+            return {
+                "success": True,
+                "message": "Scan operation initiated",
+                "settings": settings
+            }
+        
+        except Exception as e:
+            with self.state_lock:
+                self.current_state = WorkflowState.FAILED
+            
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
 
 # Global orchestrator instance

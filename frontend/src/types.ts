@@ -113,6 +113,7 @@ export interface OCRResult {
 export interface OCRResponse {
   success: boolean;
   filename: string;
+  original_filename?: string;  // Present if file was renamed
   ocr_result: OCRResult | null;
   ocr_ready: boolean;
   error?: string;

@@ -32,14 +32,14 @@ def register_handlers(socketio):
     def handle_connect():
         """Handle client connection."""
         from flask import request
-        logger.info(f"Socket connected: {request.sid}")
+        logger.info(f"Socket connected: {request.sid}")  # type: ignore[attr-defined]
         return True
     
     @socketio.on("disconnect")
     def handle_disconnect():
         """Handle client disconnection."""
         from flask import request
-        logger.info(f"Socket disconnected: {request.sid}")
+        logger.info(f"Socket disconnected: {request.sid}")  # type: ignore[attr-defined]
     
     @socketio.on("error")
     def handle_error(e):
@@ -199,6 +199,19 @@ def register_handlers(socketio):
             emit("auto_capture_state_changed", data, broadcast=True, include_self=False)
         except Exception as e:
             logger.error(f"Error in auto_capture_state_changed handler: {e}")
+
+    @socketio.on("delay_settings_updated")
+    def handle_delay_settings_updated(data):
+        """
+        Handle delay settings updates to sync across all devices.
+        Broadcasts to all connected clients including Dashboard and Phone.
+        """
+        from flask_socketio import emit
+        try:
+            logger.info(f"Received delay_settings_updated: {data}")
+            emit("delay_settings_updated", data, broadcast=True, include_self=False)
+        except Exception as e:
+            logger.error(f"Error in delay_settings_updated handler: {e}")
 
 
 def emit_event(event: str, data: dict, broadcast: bool = True):

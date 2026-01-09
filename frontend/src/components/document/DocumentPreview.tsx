@@ -23,6 +23,8 @@ import {
   useBreakpointValue,
 } from '@chakra-ui/react';
 import Iconify from '../common/Iconify';
+import SelectableTextOverlay from './SelectableTextOverlay';
+import { OCRResult } from '../../types';
 
 // ==================== PREVIEW SIZE CONFIGURATION ====================
 // A4 paper aspect ratio: 1:1.414 (210mm x 297mm)
@@ -68,6 +70,10 @@ interface DocumentPreviewProps {
   highlightSource?: 'manual' | 'voice';
   onRequestDocChange?: (nextIndex: number) => void;
   onRequestPageChange?: (nextPage: number) => void;
+  /** OCR results for the current document - enables text selection on image */
+  ocrResult?: OCRResult | null;
+  /** Whether text selection mode is enabled */
+  textSelectionEnabled?: boolean;
 }
 
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({
@@ -80,6 +86,8 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   highlightSource = 'manual',
   onRequestDocChange,
   onRequestPageChange,
+  ocrResult,
+  textSelectionEnabled = true,
 }) => {
   const [currentDocIndex, setCurrentDocIndex] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -89,8 +97,10 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [rotation, setRotation] = useState(0);
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single'); // New: toggle between single page and all pages
   const [focusBadgeVisible, setFocusBadgeVisible] = useState(false);
+  const [previewDimensions, setPreviewDimensions] = useState({ width: 0, height: 0 });
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const previewBoxRef = useRef<HTMLDivElement | null>(null);
 
   // Updated to match SurfaceCard theme
   const bgColor = useColorModeValue('rgba(255, 248, 240, 0.95)', 'rgba(12, 16, 35, 0.92)');
@@ -791,23 +801,46 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               justifyContent="center"
               overflow="hidden"
               flexShrink={0}
+              ref={previewBoxRef}
             >
               {currentPageUrl ? (
-                <img
-                  key={`${currentDocIndex}-${currentPage}-${rotation}`}
-                  src={currentPageUrl}
-                  alt={`${currentDoc.filename} - Page ${currentPage}`}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                    display: 'block',
-                    transformOrigin: 'center center',
-                    transform: `rotate(${rotation}deg)`,
-                    filter: 'none',
-                    transition: 'transform 0.3s ease-out',
-                  }}
-                />
+                <>
+                  <img
+                    key={`${currentDocIndex}-${currentPage}-${rotation}`}
+                    src={currentPageUrl}
+                    alt={`${currentDoc.filename} - Page ${currentPage}`}
+                    onLoad={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      const container = previewBoxRef.current;
+                      if (container) {
+                        setPreviewDimensions({
+                          width: container.clientWidth,
+                          height: container.clientHeight,
+                        });
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                      display: 'block',
+                      transformOrigin: 'center center',
+                      transform: `rotate(${rotation}deg)`,
+                      filter: 'none',
+                      transition: 'transform 0.3s ease-out',
+                    }}
+                  />
+                  {/* OCR Text Overlay for copy/paste */}
+                  {textSelectionEnabled && ocrResult && ocrResult.raw_results && ocrResult.image_dimensions && rotation === 0 && (
+                    <SelectableTextOverlay
+                      rawResults={ocrResult.raw_results}
+                      imageDimensions={ocrResult.image_dimensions}
+                      containerWidth={previewDimensions.width}
+                      containerHeight={previewDimensions.height}
+                      isActive={true}
+                    />
+                  )}
+                </>
               ) : (
                 <VStack spacing={3}>
                   <Iconify icon="solar:document-bold" width={48} height={48} color="gray.300" />

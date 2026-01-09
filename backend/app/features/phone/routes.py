@@ -96,12 +96,28 @@ def upload_file():
         if result["success"]:
             # Emit socket event for real-time update
             try:
-                from app.core import socketio
+                # Import socketio from the main app module (where it's initialized)
+                # This ensures we use the same SocketIO instance connected to the Flask app
+                from __main__ import socketio
+                current_app.logger.info(f"[Socket.IO] Emitting new_file event for {processed_filename}")
                 socketio.emit("new_file", {
                     "filename": processed_filename,
                     "original": upload_filename,
                     "timestamp": timestamp,
                 })
+                current_app.logger.info(f"[Socket.IO] Emitted successfully")
+            except ImportError:
+                # Fallback: try importing from app.core (for testing)
+                try:
+                    from app.core import socketio
+                    current_app.logger.info(f"[Socket.IO] Using fallback import from app.core for {processed_filename}")
+                    socketio.emit("new_file", {
+                        "filename": processed_filename,
+                        "original": upload_filename,
+                        "timestamp": timestamp,
+                    })
+                except Exception as e2:
+                    current_app.logger.warning(f"Socket emit failed (fallback): {e2}")
             except Exception as e:
                 current_app.logger.warning(f"Socket emit failed: {e}")
             

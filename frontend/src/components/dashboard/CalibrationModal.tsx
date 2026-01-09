@@ -254,6 +254,14 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({ isOpen, onCl
                 w="full"
                 onClick={() => {
                   setInitialDelay(tempDelay);
+                  // Broadcast delay update to all connected devices
+                  if (socket) {
+                    socket.emit('delay_settings_updated', {
+                      initialDelay: tempDelay,
+                      interCaptureDelay: interCaptureDelay,
+                      timestamp: Date.now()
+                    });
+                  }
                   toast({
                     title: 'Delay Updated',
                     description: `Auto-capture startup delay set to ${tempDelay} seconds`,
@@ -310,6 +318,14 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({ isOpen, onCl
                 w="full"
                 onClick={() => {
                   setInterCaptureDelay(tempInterCaptureDelay);
+                  // Broadcast delay update to all connected devices
+                  if (socket) {
+                    socket.emit('delay_settings_updated', {
+                      initialDelay: initialDelay,
+                      interCaptureDelay: tempInterCaptureDelay,
+                      timestamp: Date.now()
+                    });
+                  }
                   toast({
                     title: 'Inter-Capture Delay Updated',
                     description: `${tempInterCaptureDelay}s delay between captures`,
@@ -381,21 +397,27 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({ isOpen, onCl
                   leftIcon={<Iconify icon={FiPlay} boxSize={4} />}
                   onClick={async () => {
                     setIsTestingDelay(true);
-                    // Notify phone to start test capture mode
+                    // Notify phone to start test capture countdown and auto-capture
                     if (socket) {
-                      socket.emit('start_test_capture', { delay: initialDelay });
+                      socket.emit('start_test_capture', { 
+                        delay: initialDelay,
+                        autoCapture: true  // Tell phone to auto-capture after countdown
+                      });
                     }
                     try {
                       await startDelayCountdown();
                       toast({
                         title: 'Startup Delay Complete!',
-                        description: 'Auto-capture should now be ready. Check captured images below.',
+                        description: 'Phone should capture now. Check captured images below.',
                         status: 'success',
                         duration: 3000,
                         isClosable: true,
                       });
                     } catch (e) {
-                      // Cancelled
+                      // Cancelled - notify phone to stop
+                      if (socket) {
+                        socket.emit('cancel_test_capture');
+                      }
                     }
                     setIsTestingDelay(false);
                   }}

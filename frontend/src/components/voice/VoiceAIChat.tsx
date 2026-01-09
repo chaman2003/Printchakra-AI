@@ -69,6 +69,10 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
   const userStoppedRef = useRef(false);
   const activeToastIdsRef = useRef<Map<string, { timestamp: number; id: string | number }>>(new Map());
   const toastTimeoutRef = useRef<{ [key: string]: ReturnType<typeof setTimeout> }>({});
+  // Track last AI response to detect echo (AI hearing itself)
+  const lastAIResponseRef = useRef<string>('');
+  // Cooldown timestamp - don't record until this time has passed
+  const cooldownUntilRef = useRef<number>(0);
 
   const toast = useToast();
 
@@ -209,6 +213,15 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
 
   useEffect(() => {
     isSpeakingRef.current = isSpeaking;
+    
+    // When speaking stops, schedule clearing of last response after 10 seconds
+    // This prevents false echo detection on unrelated future speech
+    if (!isSpeaking && lastAIResponseRef.current) {
+      const clearTimer = setTimeout(() => {
+        lastAIResponseRef.current = '';
+      }, 10000);
+      return () => clearTimeout(clearTimer);
+    }
   }, [isSpeaking]);
 
   useEffect(() => {
@@ -317,7 +330,16 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
 
     if (isSpeakingRef.current) {
       console.log('TTS is speaking - delaying recording restart');
-      scheduleRecordingStart(120);
+      scheduleRecordingStart(200);
+      return;
+    }
+
+    // Check cooldown period (prevents mic from picking up speaker audio)
+    const now = Date.now();
+    if (now < cooldownUntilRef.current) {
+      const remainingCooldown = cooldownUntilRef.current - now;
+      console.log(`[startRecording] Still in cooldown, waiting ${remainingCooldown}ms`);
+      scheduleRecordingStart(remainingCooldown + 100);
       return;
     }
 
@@ -549,6 +571,15 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
       clearTimeout(recordingRestartTimeoutRef.current);
     }
 
+    // Check cooldown and adjust delay if needed
+    const now = Date.now();
+    let adjustedDelay = delay;
+    if (now < cooldownUntilRef.current) {
+      const cooldownRemaining = cooldownUntilRef.current - now;
+      adjustedDelay = Math.max(delay, cooldownRemaining + 100);
+      console.log(`[scheduleRecordingStart] Adjusting delay for cooldown: ${adjustedDelay}ms`);
+    }
+
     recordingRestartTimeoutRef.current = setTimeout(() => {
       recordingRestartTimeoutRef.current = null;
 
@@ -557,7 +588,14 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
       }
 
       if (isSpeakingRef.current) {
-        scheduleRecordingStart(150);
+        scheduleRecordingStart(200);
+        return;
+      }
+      
+      // Double-check cooldown before starting
+      if (Date.now() < cooldownUntilRef.current) {
+        const remaining = cooldownUntilRef.current - Date.now();
+        scheduleRecordingStart(remaining + 100);
         return;
       }
 
@@ -566,7 +604,7 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
       }
 
       startRecording();
-    }, Math.max(0, delay));
+    }, Math.max(0, adjustedDelay));
   }, []);
 
   const startSession = async () => {
@@ -617,10 +655,92 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
     }
   };
 
+  /**
+   * Check if transcribed text is likely an echo of the last AI response
+   * This prevents the AI from responding to its own speech
+   */
+  const isEchoOfLastResponse = (transcribedText: string): boolean => {
+    if (!lastAIResponseRef.current || !transcribedText) return false;
+    
+    const lastResponse = lastAIResponseRef.current.toLowerCase().trim();
+    const transcribed = transcribedText.toLowerCase().trim();
+    
+    // If the transcription is very similar to what AI just said, it's an echo
+    // Check for exact match or high similarity
+    if (transcribed === lastResponse) {
+      console.log('[ECHO DETECTED] Exact match with last AI response');
+      return true;
+    }
+    
+    // Check if transcription starts with or contains AI's response
+    if (transcribed.includes(lastResponse) || lastResponse.includes(transcribed)) {
+      console.log('[ECHO DETECTED] Transcription contains AI response or vice versa');
+      return true;
+    }
+    
+    // Check for common AI phrases that shouldn't be repeated by user
+    const aiOnlyPhrases = [
+      "i'm glad you asked",
+      "the following is a sample",
+      "please say",
+      "insert text here",
+      "what options would you like",
+      "opening scan interface",
+      "opening print interface",
+      "do you want to print",
+      "do you want to scan",
+      "say yes to proceed",
+      "printchakra ai",
+      "voice session",
+      "i can help you",
+    ];
+    
+    for (const phrase of aiOnlyPhrases) {
+      if (transcribed.includes(phrase)) {
+        console.log(`[ECHO DETECTED] Transcription contains AI-only phrase: "${phrase}"`);
+        return true;
+      }
+    }
+    
+    // Check if transcription contains most of the AI response (echo pickup)
+    const lastResponseWords = lastResponse.split(/\s+/).filter(w => w.length > 2);
+    const transcribedWords = transcribed.split(/\s+/).filter(w => w.length > 2);
+    
+    if (lastResponseWords.length >= 3 && transcribedWords.length >= 3) {
+      // Count matching words
+      const matchingWords = lastResponseWords.filter(w => transcribedWords.includes(w));
+      const matchRatio = matchingWords.length / Math.min(lastResponseWords.length, transcribedWords.length);
+      
+      // Lower threshold to catch more echoes (was 0.6, now 0.5)
+      if (matchRatio > 0.5) {
+        console.log(`[ECHO DETECTED] ${(matchRatio * 100).toFixed(0)}% word match with last AI response`);
+        return true;
+      }
+    }
+    
+    // Check if very long transcription overlaps significantly with AI response
+    if (transcribedWords.length > 10) {
+      const overlapCount = transcribedWords.filter(w => lastResponseWords.includes(w)).length;
+      if (overlapCount > 5) {
+        console.log(`[ECHO DETECTED] Long transcription has ${overlapCount} overlapping words`);
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
   const processAudio = async (audioBlob: Blob) => {
     if (isSpeaking) {
       console.log('TTS is speaking - skipping audio processing');
-      scheduleRecordingStart(150);
+      scheduleRecordingStart(200);
+      return;
+    }
+    
+    // Check cooldown (extra safety against echo)
+    if (Date.now() < cooldownUntilRef.current) {
+      console.log('[processAudio] Still in cooldown, skipping');
+      scheduleRecordingStart(500);
       return;
     }
 
@@ -653,6 +773,15 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
         console.log(`🤖 AI response: "${response.data.ai_response}"`);
         console.log(`📋 Voice command: ${response.data.voice_command || 'none'}`);
         console.log(`🎯 Orchestration: ${response.data.orchestration_trigger ? response.data.orchestration_mode : 'none'}`);
+        
+        // Echo detection - check if AI is hearing itself
+        if (isEchoOfLastResponse(response.data.user_text)) {
+          console.log('🔇 ECHO DETECTED - AI heard itself, ignoring and restarting recording');
+          setIsProcessing(false);
+          setSessionStatus('Ready - Just speak naturally');
+          scheduleRecordingStart(1500);
+          return;
+        }
       }
 
       // Check for no speech detected (auto-retry)
@@ -682,24 +811,34 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
           voice_command,
           command_params,
           orchestration,
+          // New ChatFlow fields
+          current_step,
+          open_document_selector,
+          open_config_panel,
+          open_review_panel,
+          execute_job,
+          config_updates,
         } = response.data;
+
+        // Store AI response for echo detection
+        lastAIResponseRef.current = (tts_response || ai_response || '').toLowerCase();
 
         // Add user message only (no duplicate "heard" message)
         addMessage('user', user_text);
 
-        // AI response should already be complete and under 20 words (no truncation needed)
+        // AI response should already be complete and under 25 words (no truncation needed)
         addMessage('ai', ai_response);
 
         setIsProcessing(false);
 
-        // Handle voice commands (document selector control)
+        // Handle voice commands (document selector control, navigation, settings)
         if (voice_command && voice_command.trim()) {
           const payload = {
             command: voice_command,
             params: command_params || {},
           };
 
-          console.log(`Voice command detected: ${voice_command}`, payload.params);
+          console.log(`[ChatFlow] Voice command: ${voice_command}`, payload.params);
           onVoiceCommand?.(payload);
 
           showToast({
@@ -713,7 +852,63 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
           });
         }
 
-        // Check for orchestration trigger BEFORE TTS
+        // Handle ChatFlow UI triggers
+        if (open_document_selector) {
+          console.log('[ChatFlow] Opening document selector');
+          showToast({
+            title: 'Document Selector',
+            description: 'Select your documents',
+            status: 'info',
+            duration: 3000,
+          });
+          // Trigger orchestration for document selection
+          if (onOrchestrationTrigger) {
+            const mode = orchestration_mode || 'print';
+            onOrchestrationTrigger(mode as 'print' | 'scan', { step: 'selecting_docs' });
+          }
+        }
+        
+        if (open_config_panel) {
+          console.log('[ChatFlow] Opening configuration panel');
+          showToast({
+            title: 'Configuration',
+            description: 'Adjust your settings',
+            status: 'info',
+            duration: 3000,
+          });
+        }
+        
+        if (open_review_panel) {
+          console.log('[ChatFlow] Opening review panel');
+          showToast({
+            title: 'Review',
+            description: 'Review your settings',
+            status: 'info',
+            duration: 3000,
+          });
+        }
+        
+        if (execute_job) {
+          console.log('[ChatFlow] Executing job', command_params);
+          showToast({
+            title: 'Executing Job',
+            description: `Starting ${command_params?.mode || 'operation'}...`,
+            status: 'success',
+            duration: 3000,
+          });
+        }
+        
+        // Apply configuration updates if provided
+        if (config_updates && Object.keys(config_updates).length > 0) {
+          console.log('[ChatFlow] Configuration updates:', config_updates);
+          // Emit config_update event for Dashboard to handle
+          onVoiceCommand?.({
+            command: 'config_update',
+            params: config_updates,
+          });
+        }
+
+        // Check for orchestration trigger BEFORE TTS (legacy support)
         if (orchestration_trigger && orchestration_mode) {
           const frontendState = orchestration?.frontend_state;
           const orchestrationPayload = frontendState
@@ -768,6 +963,12 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
               timeout: 60000,
             }
           );
+          
+          // Set cooldown period after TTS completes (3.5 seconds to let audio fully dissipate)
+          // This prevents the mic from picking up residual speaker audio
+          // Increased from 2.5s to 3.5s for better echo prevention
+          cooldownUntilRef.current = Date.now() + 3500;
+          console.log('[TTS] Speech complete, cooldown until:', new Date(cooldownUntilRef.current).toISOString());
         } catch (ttsError) {
           console.error('TTS error:', ttsError);
           // Continue even if TTS fails
@@ -792,8 +993,10 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
               duration: 3000,
             });
           } else {
-            // Auto-restart recording with 1 second delay after TTS completes
-            scheduleRecordingStart(1000);
+            // Auto-restart recording with 3.5 second delay after TTS completes
+            // This gives time for speaker audio to fully dissipate before mic listens again
+            // Increased from 2.5s to 3.5s for better echo prevention
+            scheduleRecordingStart(3500);
           }
         }
       } else {

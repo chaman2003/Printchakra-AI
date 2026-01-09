@@ -20,8 +20,8 @@ def setup_logging(level: int = logging.INFO, log_file: Optional[str] = None) -> 
     # Fix Windows console encoding issues
     if sys.platform == "win32":
         try:
-            sys.stdout.reconfigure(encoding="utf-8")
-            sys.stderr.reconfigure(encoding="utf-8")
+            sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+            sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
         except Exception:
             pass
     

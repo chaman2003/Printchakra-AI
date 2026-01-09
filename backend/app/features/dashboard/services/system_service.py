@@ -6,6 +6,7 @@ Service for system-related operations including printer management.
 
 import os
 import platform
+import shutil
 import subprocess
 import logging
 from typing import Dict, List, Any, Optional
@@ -230,3 +231,165 @@ class SystemService:
         except Exception as e:
             logger.error(f"Error setting default printer: {e}")
             return {"success": False, "error": str(e)}
+    
+    def get_gpu_info(self) -> Dict[str, Any]:
+        """
+        Get GPU information for ML operations.
+        
+        Returns:
+            GPU info dictionary
+        """
+        gpu_info = {
+            "available": False,
+            "cuda_available": False,
+            "device_count": 0,
+            "devices": [],
+            "memory_total": 0,
+            "memory_used": 0,
+            "memory_free": 0
+        }
+        
+        try:
+            import torch
+            
+            gpu_info["cuda_available"] = torch.cuda.is_available()
+            
+            if torch.cuda.is_available():
+                gpu_info["available"] = True
+                gpu_info["device_count"] = torch.cuda.device_count()
+                
+                for i in range(torch.cuda.device_count()):
+                    device_props = torch.cuda.get_device_properties(i)
+                    memory_total = device_props.total_memory
+                    memory_allocated = torch.cuda.memory_allocated(i)
+                    memory_free = memory_total - memory_allocated
+                    
+                    gpu_info["devices"].append({
+                        "index": i,
+                        "name": device_props.name,
+                        "memory_total": memory_total,
+                        "memory_used": memory_allocated,
+                        "memory_free": memory_free,
+                        "compute_capability": f"{device_props.major}.{device_props.minor}"
+                    })
+                    
+                    if i == 0:
+                        gpu_info["memory_total"] = memory_total
+                        gpu_info["memory_used"] = memory_allocated
+                        gpu_info["memory_free"] = memory_free
+        
+        except ImportError:
+            gpu_info["error"] = "PyTorch not installed"
+        except Exception as e:
+            gpu_info["error"] = str(e)
+        
+        return gpu_info
+    
+    def get_services_status(self) -> Dict[str, Any]:
+        """
+        Get status of external services.
+        
+        Returns:
+            Services status dictionary
+        """
+        services = {
+            "ollama": {"status": "unknown", "available": False},
+            "paddle_ocr": {"status": "unknown", "available": False},
+            "print_spooler": {"status": "unknown", "available": False}
+        }
+        
+        # Check Ollama
+        try:
+            import requests
+            response = requests.get("http://localhost:11434/api/tags", timeout=2)
+            if response.status_code == 200:
+                services["ollama"] = {"status": "running", "available": True}
+            else:
+                services["ollama"] = {"status": "error", "available": False}
+        except Exception:
+            services["ollama"] = {"status": "not running", "available": False}
+        
+        # Check PaddleOCR
+        try:
+            from paddleocr import PaddleOCR
+            services["paddle_ocr"] = {"status": "available", "available": True}
+        except ImportError:
+            services["paddle_ocr"] = {"status": "not installed", "available": False}
+        except Exception:
+            services["paddle_ocr"] = {"status": "error", "available": False}
+        
+        # Check Print Spooler (Windows)
+        if platform.system() == "Windows":
+            try:
+                result = subprocess.run(
+                    ["powershell", "-Command", "(Get-Service -Name Spooler).Status"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    status = result.stdout.strip().lower()
+                    services["print_spooler"] = {
+                        "status": status,
+                        "available": status == "running"
+                    }
+            except Exception:
+                pass
+        
+        return services
+    
+    def get_storage_info(self) -> Dict[str, Any]:
+        """
+        Get storage information.
+        
+        Returns:
+            Storage info dictionary
+        """
+        import shutil
+        
+        storage = {
+            "total": 0,
+            "used": 0,
+            "free": 0,
+            "percent_used": 0,
+            "data_directories": {}
+        }
+        
+        try:
+            # Get disk usage for the current drive
+            if platform.system() == "Windows":
+                drive = os.path.splitdrive(os.getcwd())[0] + "\\"
+            else:
+                drive = "/"
+            
+            total, used, free = shutil.disk_usage(drive)
+            storage["total"] = total
+            storage["used"] = used
+            storage["free"] = free
+            storage["percent_used"] = round((used / total) * 100, 2) if total > 0 else 0
+            
+            # Check data directories if they exist
+            data_base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data")
+            
+            if os.path.exists(data_base):
+                for folder in ["uploads", "processed", "converted", "pdfs"]:
+                    folder_path = os.path.join(data_base, folder)
+                    if os.path.exists(folder_path):
+                        folder_size = 0
+                        file_count = 0
+                        for dirpath, dirnames, filenames in os.walk(folder_path):
+                            for f in filenames:
+                                fp = os.path.join(dirpath, f)
+                                if os.path.exists(fp):
+                                    folder_size += os.path.getsize(fp)
+                                    file_count += 1
+                        
+                        storage["data_directories"][folder] = {
+                            "size": folder_size,
+                            "file_count": file_count
+                        }
+        
+        except Exception as e:
+            storage["error"] = str(e)
+        
+        return storage

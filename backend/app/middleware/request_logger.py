@@ -38,12 +38,12 @@ class RequestLogger:
 
     def before_request(self):
         """Log before request processing"""
-        request.start_time = time.time()
+        request.start_time = time.time()  # type: ignore[attr-defined]
 
     def after_request(self, response):
         """Log after request processing"""
         if hasattr(request, "start_time"):
-            duration = time.time() - request.start_time
+            duration = time.time() - request.start_time  # type: ignore[attr-defined]
             logger.info(
                 f"{request.method} {request.path} - "
                 f"Status: {response.status_code} - "

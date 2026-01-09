@@ -227,25 +227,67 @@ class ImageEnhancer:
         return cv2.GaussianBlur(image, kernel_size, sigma)
 
     def apply_canny_edge_detection(
-        self, image: np.ndarray, threshold1: int = None, threshold2: int = None
+        self, image: np.ndarray, threshold1: int = None, threshold2: int = None,
+        use_multi_scale: bool = False, debug: bool = False
     ) -> np.ndarray:
         """
-        Apply Canny edge detection (Step 6 from notebook)
+        Apply Canny edge detection (matching notebook implementation)
+
+        The notebook uses thresholds: (30, 100), (50, 150), (75, 200)
+        Default is (50, 150) which works well for most documents.
 
         Args:
             image: Input grayscale image
-            threshold1: Lower threshold
-            threshold2: Upper threshold
+            threshold1: Lower threshold (default: 50)
+            threshold2: Upper threshold (default: 150)
+            use_multi_scale: If True, try multiple thresholds and combine
+            debug: Print debug information
 
         Returns:
             Edge map
         """
-        if threshold1 is None:
-            threshold1 = 50  # Default from notebook
-        if threshold2 is None:
-            threshold2 = 150  # Default from notebook
+        try:
+            # Validate input
+            if image is None or image.size == 0:
+                if debug:
+                    logger.warning("Canny: Invalid input image")
+                return np.zeros_like(image) if image is not None else np.zeros((100, 100), dtype=np.uint8)
 
-        return cv2.Canny(image, threshold1, threshold2)
+            # Ensure grayscale
+            if len(image.shape) == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = image
+
+            if threshold1 is None:
+                threshold1 = 50  # Default from notebook
+            if threshold2 is None:
+                threshold2 = 150  # Default from notebook
+
+            if use_multi_scale:
+                # Multi-scale approach matching notebook
+                combined_edges = np.zeros_like(gray, dtype=np.uint8)
+                
+                for low, high in [(30, 100), (50, 150), (75, 200)]:
+                    try:
+                        edges = cv2.Canny(gray, low, high)
+                        combined_edges = cv2.bitwise_or(combined_edges, edges)
+                        if debug:
+                            logger.info(f"Canny({low}, {high}) applied successfully")
+                    except Exception as e:
+                        if debug:
+                            logger.warning(f"Canny({low}, {high}) failed: {e}")
+                        continue
+                
+                return combined_edges
+            else:
+                # Single threshold approach
+                return cv2.Canny(gray, threshold1, threshold2)
+
+        except Exception as e:
+            logger.error(f"Canny edge detection error: {str(e)}")
+            # Return empty edge map on error
+            return np.zeros_like(image) if image is not None else np.zeros((100, 100), dtype=np.uint8)
 
     def apply_binary_thresholding(
         self, image: np.ndarray, method: str = "otsu"

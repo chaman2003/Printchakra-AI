@@ -492,3 +492,118 @@ class PrintJobService:
         img.close()
         
         return temp_pdf_path
+    
+    def create_job(
+        self,
+        document_path: str,
+        printer_name: str,
+        copies: int = 1,
+        color: bool = True,
+        duplex: bool = False,
+        page_range: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a print job.
+        
+        Args:
+            document_path: Path to document
+            printer_name: Target printer name
+            copies: Number of copies
+            color: Color or grayscale
+            duplex: Double-sided printing
+            page_range: Page range to print
+            
+        Returns:
+            Job info dictionary
+        """
+        import uuid
+        from datetime import datetime
+        
+        job_id = str(uuid.uuid4())
+        
+        job = {
+            "id": job_id,
+            "document": os.path.basename(document_path),
+            "document_path": document_path,
+            "printer": printer_name,
+            "copies": copies,
+            "color": color,
+            "duplex": duplex,
+            "page_range": page_range,
+            "status": "queued",
+            "created": datetime.now().isoformat(),
+            "completed": None,
+            "error": None
+        }
+        
+        # Submit the print job
+        try:
+            for _ in range(copies):
+                success = self._print_file(document_path)
+                if not success:
+                    job["status"] = "failed"
+                    job["error"] = "Print command failed"
+                    break
+            else:
+                job["status"] = "submitted"
+        except Exception as e:
+            job["status"] = "failed"
+            job["error"] = str(e)
+        
+        return job
+    
+    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get job status by ID.
+        
+        Args:
+            job_id: Job ID
+            
+        Returns:
+            Job info or None
+        """
+        # In a real implementation, this would query a job store
+        # For now, return a placeholder
+        return None
+    
+    def cancel_job(self, job_id: str) -> bool:
+        """
+        Cancel a print job.
+        
+        Args:
+            job_id: Job ID
+            
+        Returns:
+            True if successful
+        """
+        # In a real implementation, this would cancel the job in the spooler
+        logger.info(f"Cancel job requested for: {job_id}")
+        return True
+    
+    def list_jobs(self, status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        List print jobs.
+        
+        Args:
+            status: Filter by status
+            limit: Maximum number of jobs to return
+            
+        Returns:
+            List of jobs
+        """
+        # In a real implementation, this would query a job store
+        return []
+    
+    def retry_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retry a failed print job.
+        
+        Args:
+            job_id: Job ID
+            
+        Returns:
+            New job info or None
+        """
+        # In a real implementation, this would re-queue the job
+        logger.info(f"Retry job requested for: {job_id}")
+        return None

@@ -6,6 +6,7 @@ import {
   Alert,
   AlertDescription,
   AlertIcon,
+  Badge,
   Box,
   Button,
   ButtonGroup,
@@ -108,7 +109,7 @@ const Phone: React.FC = () => {
   const [pendingDocumentCount, setPendingDocumentCount] = useState<number>(0);
 
   // Auto-capture delays from calibration
-  const { initialDelay, interCaptureDelay, startDelayCountdown, countdownValue, isCountingDown, cancelCountdown } = useCalibration();
+  const { initialDelay, interCaptureDelay, startDelayCountdown, countdownValue, isCountingDown, cancelCountdown, setInitialDelay, setInterCaptureDelay } = useCalibration();
   const [isWaitingForInitialDelay, setIsWaitingForInitialDelay] = useState(false);
   const hasAppliedInitialDelayRef = useRef(false);
 
@@ -694,8 +695,8 @@ const Phone: React.FC = () => {
     const video = videoRef.current;
     if (!video || video.readyState < 2 || !video.videoWidth) return null;
 
-    // Use offscreen canvas for detection - slightly higher res for better accuracy
-    const targetWidth = 200;
+    // Use offscreen canvas for detection - higher resolution for better accuracy
+    const targetWidth = 320;  // Increased from 200 for better edge detection
     const aspectRatio = video.videoHeight / video.videoWidth;
     const targetHeight = Math.round(targetWidth * aspectRatio);
 
@@ -743,17 +744,42 @@ const Phone: React.FC = () => {
       }
     }
 
-    // Compute gradients using Sobel operator with direction
+    // Apply CLAHE-like local contrast enhancement for better edge detection
+    const enhanced: number[][] = Array(height).fill(null).map(() => Array(width).fill(0));
+    const blockSize = 16;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // Calculate local mean and std in a block
+        let localSum = 0, localSumSq = 0, count = 0;
+        const halfBlock = Math.floor(blockSize / 2);
+        for (let dy = -halfBlock; dy <= halfBlock; dy++) {
+          for (let dx = -halfBlock; dx <= halfBlock; dx++) {
+            const ny = Math.max(0, Math.min(height - 1, y + dy));
+            const nx = Math.max(0, Math.min(width - 1, x + dx));
+            localSum += blurred[ny][nx];
+            localSumSq += blurred[ny][nx] * blurred[ny][nx];
+            count++;
+          }
+        }
+        const localMean = localSum / count;
+        const localVar = Math.max(1, (localSumSq / count) - (localMean * localMean));
+        const localStd = Math.sqrt(localVar);
+        // Enhance contrast locally
+        enhanced[y][x] = Math.max(0, Math.min(255, 128 + (blurred[y][x] - localMean) * 2 / Math.max(localStd / 64, 1)));
+      }
+    }
+
+    // Compute gradients using Sobel operator with direction on enhanced image
     const gradMag: number[][] = Array(height).fill(null).map(() => Array(width).fill(0));
     const gradDir: number[][] = Array(height).fill(null).map(() => Array(width).fill(0));
 
     for (let y = 2; y < height - 2; y++) {
       for (let x = 2; x < width - 2; x++) {
-        const gx = -blurred[y - 1][x - 1] + blurred[y - 1][x + 1]
-          - 2 * blurred[y][x - 1] + 2 * blurred[y][x + 1]
-          - blurred[y + 1][x - 1] + blurred[y + 1][x + 1];
-        const gy = -blurred[y - 1][x - 1] - 2 * blurred[y - 1][x] - blurred[y - 1][x + 1]
-          + blurred[y + 1][x - 1] + 2 * blurred[y + 1][x] + blurred[y + 1][x + 1];
+        const gx = -enhanced[y - 1][x - 1] + enhanced[y - 1][x + 1]
+          - 2 * enhanced[y][x - 1] + 2 * enhanced[y][x + 1]
+          - enhanced[y + 1][x - 1] + enhanced[y + 1][x + 1];
+        const gy = -enhanced[y - 1][x - 1] - 2 * enhanced[y - 1][x] - enhanced[y - 1][x + 1]
+          + enhanced[y + 1][x - 1] + 2 * enhanced[y + 1][x] + enhanced[y + 1][x + 1];
         gradMag[y][x] = Math.sqrt(gx * gx + gy * gy);
         gradDir[y][x] = Math.atan2(gy, gx);
       }
@@ -790,27 +816,30 @@ const Phone: React.FC = () => {
       }
     }
 
-    // Adaptive dual threshold (Canny-style hysteresis)
+    // Adaptive dual threshold (Canny-style hysteresis) with improved percentiles
     const histogram = new Array(256).fill(0);
+    let maxMag = 0;
     for (let y = 2; y < height - 2; y++) {
       for (let x = 2; x < width - 2; x++) {
         const bin = Math.min(255, Math.floor(suppressed[y][x]));
         histogram[bin]++;
+        if (suppressed[y][x] > maxMag) maxMag = suppressed[y][x];
       }
     }
 
-    // Find thresholds using percentiles for adaptive behavior
+    // Find thresholds using percentiles - tuned for document edges
     const totalPixels = (width - 4) * (height - 4);
     let cumulative = 0;
-    let lowThreshold = 20, highThreshold = 50;
+    let lowThreshold = 25, highThreshold = 60;
 
+    // Use Otsu-like method for better threshold selection
     for (let i = 0; i < 256; i++) {
       cumulative += histogram[i];
-      if (cumulative > totalPixels * 0.7 && lowThreshold === 20) {
-        lowThreshold = Math.max(15, i);
+      if (cumulative > totalPixels * 0.75 && lowThreshold === 25) {
+        lowThreshold = Math.max(20, Math.min(i, maxMag * 0.15));
       }
-      if (cumulative > totalPixels * 0.9) {
-        highThreshold = Math.max(lowThreshold * 2, i);
+      if (cumulative > totalPixels * 0.92) {
+        highThreshold = Math.max(lowThreshold * 2.5, Math.min(i, maxMag * 0.35));
         break;
       }
     }
@@ -829,10 +858,13 @@ const Phone: React.FC = () => {
       }
     }
 
-    // Connect weak edges to strong edges
+    // Connect weak edges to strong edges with limited iterations
     let changed = true;
-    while (changed) {
+    let iterations = 0;
+    const maxIterations = 5;
+    while (changed && iterations < maxIterations) {
       changed = false;
+      iterations++;
       for (let y = 2; y < height - 2; y++) {
         for (let x = 2; x < width - 2; x++) {
           if (!edges[y][x] && suppressed[y][x] >= lowThreshold) {
@@ -848,6 +880,25 @@ const Phone: React.FC = () => {
               if (edges[y][x]) break;
             }
           }
+        }
+      }
+    }
+
+    // Morphological closing to connect nearby edges
+    const closed: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
+    // Dilate
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        if (edges[y][x] || edges[y-1][x] || edges[y+1][x] || edges[y][x-1] || edges[y][x+1]) {
+          closed[y][x] = true;
+        }
+      }
+    }
+    // Erode back
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        if (closed[y][x] && closed[y-1][x] && closed[y+1][x] && closed[y][x-1] && closed[y][x+1]) {
+          edges[y][x] = true;
         }
       }
     }
@@ -886,17 +937,18 @@ const Phone: React.FC = () => {
         }
 
         if (!found) break;
-      } while (!(x === startX && y === startY) && contour.length < 5000);
+      } while (!(x === startX && y === startY) && contour.length < 8000);
 
       return contour;
     };
 
-    // Find all contours (minimum length increased for better filtering)
+    // Find all contours with adaptive minimum length based on image size
+    const minContourLength = Math.max(60, Math.min(width, height) * 0.25);
     for (let y = 2; y < height - 2; y++) {
       for (let x = 2; x < width - 2; x++) {
         if (edges[y][x] && !visited[y][x]) {
           const contour = traceContour(x, y);
-          if (contour.length > 80) {
+          if (contour.length > minContourLength) {
             contours.push(contour);
           }
         }
@@ -905,7 +957,7 @@ const Phone: React.FC = () => {
 
     if (contours.length === 0) return null;
 
-    // Douglas-Peucker simplification
+    // Douglas-Peucker simplification with adaptive epsilon
     const simplifyContour = (points: { x: number; y: number }[], epsilon: number): { x: number; y: number }[] => {
       if (points.length < 3) return points;
 
@@ -963,80 +1015,166 @@ const Phone: React.FC = () => {
       return Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2)))) * 180 / Math.PI;
     };
 
+    // Helper: calculate edge lengths of quad
+    const edgeLengths = (pts: { x: number; y: number }[]): number[] => {
+      const lengths: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        const p1 = pts[i];
+        const p2 = pts[(i + 1) % 4];
+        lengths.push(Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2));
+      }
+      return lengths;
+    };
+
+    // Helper: score a quadrilateral for document-likeness
+    const scoreQuad = (quad: { x: number; y: number }[]): number => {
+      // Area score
+      const area = 0.5 * Math.abs(
+        (quad[0].x * quad[1].y - quad[1].x * quad[0].y) +
+        (quad[1].x * quad[2].y - quad[2].x * quad[1].y) +
+        (quad[2].x * quad[3].y - quad[3].x * quad[2].y) +
+        (quad[3].x * quad[0].y - quad[0].x * quad[3].y)
+      );
+      const imageArea = width * height;
+      const areaRatio = area / imageArea;
+
+      // Reject too small or too large
+      if (areaRatio < 0.05 || areaRatio > 0.95) return 0;
+
+      // Area score (prefer 15-80% coverage)
+      let areaScore = 0;
+      if (areaRatio >= 0.15 && areaRatio <= 0.80) {
+        areaScore = 100;
+      } else if (areaRatio >= 0.08 && areaRatio < 0.15) {
+        areaScore = 50;
+      } else if (areaRatio > 0.80 && areaRatio <= 0.90) {
+        areaScore = 30;
+      } else {
+        areaScore = 10;
+      }
+
+      // Angle score (prefer near 90 degrees)
+      const angles = [
+        cornerAngle(quad[3], quad[0], quad[1]),
+        cornerAngle(quad[0], quad[1], quad[2]),
+        cornerAngle(quad[1], quad[2], quad[3]),
+        cornerAngle(quad[2], quad[3], quad[0]),
+      ];
+      const avgAngleDeviation = angles.reduce((s, a) => s + Math.abs(a - 90), 0) / 4;
+      let angleScore = 0;
+      if (avgAngleDeviation < 8) angleScore = 100;
+      else if (avgAngleDeviation < 15) angleScore = 70;
+      else if (avgAngleDeviation < 25) angleScore = 40;
+      else if (avgAngleDeviation < 40) angleScore = 15;
+      else return 0; // Too skewed
+
+      // Edge ratio score (prefer rectangular proportions)
+      const edges = edgeLengths(quad);
+      const minEdge = Math.min(...edges);
+      const maxEdge = Math.max(...edges);
+      const edgeRatio = minEdge / maxEdge;
+      let edgeScore = 0;
+      if (edgeRatio > 0.4) edgeScore = 80;
+      else if (edgeRatio > 0.25) edgeScore = 50;
+      else if (edgeRatio > 0.15) edgeScore = 20;
+      else return 0; // Too elongated
+
+      // Margin score - penalize if too close to image edges
+      const margin = 0.03; // 3% margin
+      const minX = Math.min(quad[0].x, quad[1].x, quad[2].x, quad[3].x) / width;
+      const maxX = Math.max(quad[0].x, quad[1].x, quad[2].x, quad[3].x) / width;
+      const minY = Math.min(quad[0].y, quad[1].y, quad[2].y, quad[3].y) / height;
+      const maxY = Math.max(quad[0].y, quad[1].y, quad[2].y, quad[3].y) / height;
+
+      let marginScore = 100;
+      if (minX < margin || minY < margin || maxX > (1 - margin) || maxY > (1 - margin)) {
+        marginScore = 20; // Edge detection might be picking up frame boundaries
+      }
+
+      // Parallel edges score (opposite edges should be roughly parallel)
+      const parallelScore = (() => {
+        const angle01 = Math.atan2(quad[1].y - quad[0].y, quad[1].x - quad[0].x);
+        const angle32 = Math.atan2(quad[2].y - quad[3].y, quad[2].x - quad[3].x);
+        const angle12 = Math.atan2(quad[2].y - quad[1].y, quad[2].x - quad[1].x);
+        const angle03 = Math.atan2(quad[3].y - quad[0].y, quad[3].x - quad[0].x);
+
+        const diff1 = Math.abs(angle01 - angle32) * 180 / Math.PI;
+        const diff2 = Math.abs(angle12 - angle03) * 180 / Math.PI;
+        const avgDiff = (Math.min(diff1, 180 - diff1) + Math.min(diff2, 180 - diff2)) / 2;
+
+        if (avgDiff < 10) return 80;
+        if (avgDiff < 20) return 50;
+        if (avgDiff < 35) return 25;
+        return 0;
+      })();
+
+      // Weighted total score
+      return (areaScore * 0.25) + (angleScore * 0.30) + (edgeScore * 0.15) + (marginScore * 0.15) + (parallelScore * 0.15);
+    };
+
     // Find the best quadrilateral
     let bestQuad: { x: number; y: number }[] | null = null;
     let bestScore = 0;
 
-    for (const contour of contours) {
-      const simplified = simplifyContour(contour, 4);
+    // Sort contours by length (longer first - more likely to be document boundary)
+    const sortedContours = [...contours].sort((a, b) => b.length - a.length);
 
-      if (simplified.length >= 4 && simplified.length <= 10) {
-        // Find 4 corners using distance from centroid + angle
-        const cx = simplified.reduce((s, p) => s + p.x, 0) / simplified.length;
-        const cy = simplified.reduce((s, p) => s + p.y, 0) / simplified.length;
+    for (const contour of sortedContours.slice(0, 15)) { // Check top 15 contours
+      // Try multiple epsilon values for simplification
+      for (const epsilonFactor of [0.015, 0.02, 0.025, 0.03]) {
+        const epsilon = Math.max(contour.length, 100) * epsilonFactor;
+        const simplified = simplifyContour(contour, epsilon);
 
-        // Score each point by distance from center
-        const scored = simplified.map(p => ({
-          ...p,
-          dist: Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2),
-          angle: Math.atan2(p.y - cy, p.x - cx)
-        }));
+        if (simplified.length >= 4 && simplified.length <= 12) {
+          // Find 4 corners using distance from centroid + angle
+          const cx = simplified.reduce((s, p) => s + p.x, 0) / simplified.length;
+          const cy = simplified.reduce((s, p) => s + p.y, 0) / simplified.length;
 
-        // Sort by angle and pick 4 points from 4 quadrants
-        scored.sort((a, b) => a.angle - b.angle);
+          // Score each point by distance from center
+          const scored = simplified.map(p => ({
+            ...p,
+            dist: Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2),
+            angle: Math.atan2(p.y - cy, p.x - cx)
+          }));
 
-        // Find points in each quadrant (TL, TR, BR, BL)
-        const quadrants: { x: number; y: number; dist: number }[] = [
-          { x: 0, y: 0, dist: 0 }, // TL: angle ~135 to 180 or -180 to -90
-          { x: 0, y: 0, dist: 0 }, // TR: angle -90 to 0
-          { x: 0, y: 0, dist: 0 }, // BR: angle 0 to 90
-          { x: 0, y: 0, dist: 0 }, // BL: angle 90 to 135
-        ];
+          // Sort by angle and pick 4 points from 4 quadrants
+          scored.sort((a, b) => a.angle - b.angle);
 
-        for (const p of scored) {
-          const deg = p.angle * 180 / Math.PI;
-          let qi = -1;
-          if (deg >= -180 && deg < -90) qi = 0; // TL
-          else if (deg >= -90 && deg < 0) qi = 1; // TR
-          else if (deg >= 0 && deg < 90) qi = 2; // BR
-          else qi = 3; // BL
-
-          if (p.dist > quadrants[qi].dist) {
-            quadrants[qi] = { x: p.x, y: p.y, dist: p.dist };
-          }
-        }
-
-        // Check if all quadrants have valid points
-        if (quadrants.every(q => q.dist > 0)) {
-          const quad = quadrants.map(q => ({ x: q.x, y: q.y }));
-
-          // Validate convexity
-          if (!isConvex(quad)) continue;
-
-          // Check corner angles (should be 60-150 degrees for reasonable documents)
-          const angles = [
-            cornerAngle(quad[3], quad[0], quad[1]),
-            cornerAngle(quad[0], quad[1], quad[2]),
-            cornerAngle(quad[1], quad[2], quad[3]),
-            cornerAngle(quad[2], quad[3], quad[0]),
+          // Find points in each quadrant (TL, TR, BR, BL)
+          const quadrants: { x: number; y: number; dist: number }[] = [
+            { x: 0, y: 0, dist: 0 }, // TL: angle ~135 to 180 or -180 to -90
+            { x: 0, y: 0, dist: 0 }, // TR: angle -90 to 0
+            { x: 0, y: 0, dist: 0 }, // BR: angle 0 to 90
+            { x: 0, y: 0, dist: 0 }, // BL: angle 90 to 135
           ];
-          if (angles.some(a => a < 45 || a > 160)) continue;
 
-          // Calculate area
-          const area = 0.5 * Math.abs(
-            (quad[0].x * quad[1].y - quad[1].x * quad[0].y) +
-            (quad[1].x * quad[2].y - quad[2].x * quad[1].y) +
-            (quad[2].x * quad[3].y - quad[3].x * quad[2].y) +
-            (quad[3].x * quad[0].y - quad[0].x * quad[3].y)
-          );
+          for (const p of scored) {
+            const deg = p.angle * 180 / Math.PI;
+            let qi = -1;
+            if (deg >= -180 && deg < -90) qi = 0; // TL
+            else if (deg >= -90 && deg < 0) qi = 1; // TR
+            else if (deg >= 0 && deg < 90) qi = 2; // BR
+            else qi = 3; // BL
 
-          // Score by area and angle regularity
-          const angleVariance = angles.reduce((s, a) => s + (a - 90) ** 2, 0) / 4;
-          const score = area * (1 - angleVariance / 10000);
+            if (p.dist > quadrants[qi].dist) {
+              quadrants[qi] = { x: p.x, y: p.y, dist: p.dist };
+            }
+          }
 
-          if (area > width * height * 0.08 && score > bestScore) {
-            bestScore = score;
-            bestQuad = quad;
+          // Check if all quadrants have valid points
+          if (quadrants.every(q => q.dist > 0)) {
+            const quad = quadrants.map(q => ({ x: q.x, y: q.y }));
+
+            // Validate convexity
+            if (!isConvex(quad)) continue;
+
+            // Score this quad
+            const score = scoreQuad(quad);
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestQuad = quad;
+            }
           }
         }
       }
@@ -1119,55 +1257,116 @@ const Phone: React.FC = () => {
     let frameCount = 0;
     let stableCount = 0; // Track how many stable frames
     let noDetectionCount = 0; // Track frames without detection
+    let recentQuads: DetectedQuad[] = []; // Buffer for temporal averaging
+    const maxRecentQuads = 5;
 
     // Adaptive smoothing - smoother when stable, more responsive when changing
-    const getSmoothing = () => stableCount > 5 ? 0.15 : 0.35;
+    const getSmoothing = () => {
+      if (stableCount > 10) return 0.08; // Very stable - slow smoothing
+      if (stableCount > 5) return 0.15;  // Stable - moderate smoothing
+      return 0.30; // Unstable - responsive
+    };
+
+    // Calculate weighted average of recent quads
+    const averageQuads = (quads: DetectedQuad[]): DetectedQuad | null => {
+      if (quads.length === 0) return null;
+      
+      // More recent quads get higher weight
+      let totalWeight = 0;
+      let avgTL = { x: 0, y: 0 };
+      let avgTR = { x: 0, y: 0 };
+      let avgBR = { x: 0, y: 0 };
+      let avgBL = { x: 0, y: 0 };
+      
+      quads.forEach((q, i) => {
+        const weight = Math.pow(1.5, i); // Exponential weights
+        totalWeight += weight;
+        avgTL.x += q.topLeft.x * weight;
+        avgTL.y += q.topLeft.y * weight;
+        avgTR.x += q.topRight.x * weight;
+        avgTR.y += q.topRight.y * weight;
+        avgBR.x += q.bottomRight.x * weight;
+        avgBR.y += q.bottomRight.y * weight;
+        avgBL.x += q.bottomLeft.x * weight;
+        avgBL.y += q.bottomLeft.y * weight;
+      });
+      
+      return {
+        topLeft: { x: avgTL.x / totalWeight, y: avgTL.y / totalWeight },
+        topRight: { x: avgTR.x / totalWeight, y: avgTR.y / totalWeight },
+        bottomRight: { x: avgBR.x / totalWeight, y: avgBR.y / totalWeight },
+        bottomLeft: { x: avgBL.x / totalWeight, y: avgBL.y / totalWeight },
+      };
+    };
+
+    // Calculate movement magnitude between two quads
+    const quadMovement = (q1: DetectedQuad, q2: DetectedQuad): number => {
+      return Math.abs(q1.topLeft.x - q2.topLeft.x) +
+        Math.abs(q1.topLeft.y - q2.topLeft.y) +
+        Math.abs(q1.topRight.x - q2.topRight.x) +
+        Math.abs(q1.topRight.y - q2.topRight.y) +
+        Math.abs(q1.bottomRight.x - q2.bottomRight.x) +
+        Math.abs(q1.bottomRight.y - q2.bottomRight.y) +
+        Math.abs(q1.bottomLeft.x - q2.bottomLeft.x) +
+        Math.abs(q1.bottomLeft.y - q2.bottomLeft.y);
+    };
 
     const tick = () => {
       frameCount++;
 
-      // Skip every other frame to reduce CPU load
-      if (frameCount % 2 !== 0) {
-        detectionRafRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
+      // Process every frame for smoother detection (was skipping every other)
       const quad = detectDocumentQuad();
 
       if (quad) {
         noDetectionCount = 0;
 
+        // Add to recent quads buffer
+        recentQuads.push(quad);
+        if (recentQuads.length > maxRecentQuads) {
+          recentQuads.shift();
+        }
+
         if (lastQuad) {
           // Calculate movement from last frame
-          const movement = Math.abs(quad.topLeft.x - lastQuad.topLeft.x) +
-            Math.abs(quad.topLeft.y - lastQuad.topLeft.y) +
-            Math.abs(quad.bottomRight.x - lastQuad.bottomRight.x) +
-            Math.abs(quad.bottomRight.y - lastQuad.bottomRight.y);
+          const movement = quadMovement(quad, lastQuad);
 
           // If very stable, increase stability counter
-          if (movement < 0.02) {
-            stableCount = Math.min(stableCount + 1, 20);
+          if (movement < 0.015) {
+            stableCount = Math.min(stableCount + 1, 25);
+          } else if (movement < 0.04) {
+            stableCount = Math.max(0, stableCount - 1);
           } else {
-            stableCount = Math.max(0, stableCount - 2);
+            stableCount = Math.max(0, stableCount - 3);
+            // Clear buffer on large movement for faster response
+            if (movement > 0.1) {
+              recentQuads = [quad];
+            }
+          }
+
+          // Use temporal averaging when stable
+          let targetQuad = quad;
+          if (stableCount > 3 && recentQuads.length >= 3) {
+            const avgQuad = averageQuads(recentQuads);
+            if (avgQuad) targetQuad = avgQuad;
           }
 
           const smoothingFactor = getSmoothing();
           const smoothed: DetectedQuad = {
             topLeft: {
-              x: lastQuad.topLeft.x + (quad.topLeft.x - lastQuad.topLeft.x) * smoothingFactor,
-              y: lastQuad.topLeft.y + (quad.topLeft.y - lastQuad.topLeft.y) * smoothingFactor,
+              x: lastQuad.topLeft.x + (targetQuad.topLeft.x - lastQuad.topLeft.x) * smoothingFactor,
+              y: lastQuad.topLeft.y + (targetQuad.topLeft.y - lastQuad.topLeft.y) * smoothingFactor,
             },
             topRight: {
-              x: lastQuad.topRight.x + (quad.topRight.x - lastQuad.topRight.x) * smoothingFactor,
-              y: lastQuad.topRight.y + (quad.topRight.y - lastQuad.topRight.y) * smoothingFactor,
+              x: lastQuad.topRight.x + (targetQuad.topRight.x - lastQuad.topRight.x) * smoothingFactor,
+              y: lastQuad.topRight.y + (targetQuad.topRight.y - lastQuad.topRight.y) * smoothingFactor,
             },
             bottomRight: {
-              x: lastQuad.bottomRight.x + (quad.bottomRight.x - lastQuad.bottomRight.x) * smoothingFactor,
-              y: lastQuad.bottomRight.y + (quad.bottomRight.y - lastQuad.bottomRight.y) * smoothingFactor,
+              x: lastQuad.bottomRight.x + (targetQuad.bottomRight.x - lastQuad.bottomRight.x) * smoothingFactor,
+              y: lastQuad.bottomRight.y + (targetQuad.bottomRight.y - lastQuad.bottomRight.y) * smoothingFactor,
             },
             bottomLeft: {
-              x: lastQuad.bottomLeft.x + (quad.bottomLeft.x - lastQuad.bottomLeft.x) * smoothingFactor,
-              y: lastQuad.bottomLeft.y + (quad.bottomLeft.y - lastQuad.bottomLeft.y) * smoothingFactor,
+              x: lastQuad.bottomLeft.x + (targetQuad.bottomLeft.x - lastQuad.bottomLeft.x) * smoothingFactor,
+              y: lastQuad.bottomLeft.y + (targetQuad.bottomLeft.y - lastQuad.bottomLeft.y) * smoothingFactor,
             },
           };
           lastQuad = smoothed;
@@ -1179,9 +1378,10 @@ const Phone: React.FC = () => {
       } else {
         // Hysteresis: require multiple no-detection frames before hiding
         noDetectionCount++;
-        if (noDetectionCount > 5) {
+        if (noDetectionCount > 8) { // Increased from 5 for more stability
           lastQuad = null;
           stableCount = 0;
+          recentQuads = [];
           setDetectedQuad(null);
         }
       }
@@ -1600,14 +1800,79 @@ const Phone: React.FC = () => {
     });
 
     // Handle test capture start from dashboard
-    socket.on('start_test_capture', (data: { delay: number }) => {
-      console.log('[Phone] Starting test capture countdown:', data.delay);
+    socket.on('start_test_capture', async (data: { delay: number; autoCapture?: boolean }) => {
+      console.log('[Phone] Starting test capture countdown:', data);
       setIsTestCaptureMode(true);
+      
+      if (data.autoCapture) {
+        // Switch to camera mode if not already
+        if (captureMode !== 'camera' || !stream) {
+          console.log('[Phone] Switching to camera mode for test');
+          handleCaptureMode('camera');
+          // Give camera time to initialize
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        toast({
+          title: '📸 Test Capture Starting',
+          description: `Auto-capturing in ${data.delay}s to test calibration`,
+          status: 'info',
+          duration: data.delay * 1000,
+        });
+        
+        // Use the calibration countdown
+        setIsWaitingForInitialDelay(true);
+        try {
+          await startDelayCountdown();
+          // Countdown complete - capture now
+          console.log('[Phone] Test countdown complete - capturing');
+          await captureFromCamera();
+          toast({
+            title: '✅ Test Capture Complete',
+            description: 'Check calibration settings for preview',
+            status: 'success',
+            duration: 3000,
+          });
+          // Exit test mode after successful capture
+          setTimeout(() => {
+            setIsTestCaptureMode(false);
+          }, 1000);
+        } catch (e) {
+          console.log('[Phone] Test capture cancelled');
+          setIsTestCaptureMode(false);
+        } finally {
+          setIsWaitingForInitialDelay(false);
+        }
+      } else {
+        toast({
+          title: '📸 Test Capture Mode',
+          description: `Capture any document now to test ${data.delay}s delay`,
+          status: 'success',
+          duration: 3000,
+        });
+      }
+    });
+    
+    // Handle test capture cancellation
+    socket.on('cancel_test_capture', () => {
+      console.log('[Phone] Test capture cancelled');
+      cancelCountdown();
+      setIsWaitingForInitialDelay(false);
+      setIsTestCaptureMode(false);
+    });
+
+    // Handle delay settings updates from Dashboard in real-time
+    socket.on('delay_settings_updated', (data: { initialDelay: number; interCaptureDelay: number; timestamp: number }) => {
+      console.log('[Phone] Delay settings updated from Dashboard:', data);
+      // Update local context with new values
+      setInitialDelay(data.initialDelay);
+      setInterCaptureDelay(data.interCaptureDelay);
       toast({
-        title: '📸 Test Capture Mode',
-        description: `Capture any document now to test ${data.delay}s delay`,
-        status: 'success',
+        title: '⚙️ Settings Updated',
+        description: `Delays: ${data.initialDelay}s startup, ${data.interCaptureDelay}s between captures`,
+        status: 'info',
         duration: 3000,
+        isClosable: true,
       });
     });
 
@@ -1618,6 +1883,8 @@ const Phone: React.FC = () => {
       socket.off('request_auto_capture_state');
       socket.off('calibration_test_mode');
       socket.off('start_test_capture');
+      socket.off('cancel_test_capture');
+      socket.off('delay_settings_updated');
     };
   }, [
     socket,
@@ -1878,6 +2145,55 @@ const Phone: React.FC = () => {
       <Card bg={panelBg} border="1px solid rgba(121,95,238,0.18)">
         <CardBody>
           <Stack spacing={8}>
+            {/* Current Delay Settings Display */}
+            <Flex
+              bg={useColorModeValue('rgba(121, 95, 238, 0.08)', 'rgba(121, 95, 238, 0.15)')}
+              borderRadius="lg"
+              px={4}
+              py={3}
+              border="1px solid"
+              borderColor={useColorModeValue('rgba(121, 95, 238, 0.2)', 'rgba(121, 95, 238, 0.3)')}
+              alignItems="center"
+              justifyContent="space-between"
+              flexWrap="wrap"
+              gap={3}
+            >
+              <Flex alignItems="center" gap={2}>
+                <Iconify icon="solar:clock-circle-bold" boxSize={5} color="brand.400" />
+                <Text fontSize="sm" fontWeight="600" color={useColorModeValue('gray.700', 'gray.200')}>
+                  Auto-Capture Delays
+                </Text>
+              </Flex>
+              <Flex gap={3} flexWrap="wrap">
+                <Badge
+                  colorScheme="purple"
+                  fontSize="xs"
+                  px={3}
+                  py={1}
+                  borderRadius="full"
+                  display="flex"
+                  alignItems="center"
+                  gap={1}
+                >
+                  <Text>Startup:</Text>
+                  <Text fontWeight="bold">{initialDelay}s</Text>
+                </Badge>
+                <Badge
+                  colorScheme="orange"
+                  fontSize="xs"
+                  px={3}
+                  py={1}
+                  borderRadius="full"
+                  display="flex"
+                  alignItems="center"
+                  gap={1}
+                >
+                  <Text>Between:</Text>
+                  <Text fontWeight="bold">{interCaptureDelay}s</Text>
+                </Badge>
+              </Flex>
+            </Flex>
+
             <ButtonGroup isAttached variant="ghost" alignSelf="center">
               <Button
                 leftIcon={<Iconify icon={FiUpload} boxSize={5} />}
@@ -1956,140 +2272,41 @@ const Phone: React.FC = () => {
                   />
                   <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-                  {/* Document Detection Overlay - SVG with 4-point polygon */}
-                  {stream && (
-                    <svg
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        pointerEvents: 'none',
-                      }}
-                      viewBox="0 0 100 100"
-                      preserveAspectRatio="none"
+                  {/* TEST MODE BANNER - Visible when in calibration test mode */}
+                  {isTestCaptureMode && !autoCapture && (
+                    <Flex
+                      position="absolute"
+                      top={0}
+                      left={0}
+                      right={0}
+                      bg="linear-gradient(90deg, rgba(139, 92, 246, 0.95) 0%, rgba(109, 40, 217, 0.95) 100%)"
+                      color="white"
+                      px={4}
+                      py={3}
+                      alignItems="center"
+                      justifyContent="center"
+                      zIndex={30}
+                      boxShadow="0 4px 20px rgba(139, 92, 246, 0.4)"
                     >
-                      {/* Semi-transparent overlay outside detected area */}
-                      <defs>
-                        <mask id="docMask">
-                          <rect x="0" y="0" width="100" height="100" fill="white" />
-                          {detectedQuad && (
-                            <polygon
-                              points={`
-                                ${detectedQuad.topLeft.x * 100},${detectedQuad.topLeft.y * 100}
-                                ${detectedQuad.topRight.x * 100},${detectedQuad.topRight.y * 100}
-                                ${detectedQuad.bottomRight.x * 100},${detectedQuad.bottomRight.y * 100}
-                                ${detectedQuad.bottomLeft.x * 100},${detectedQuad.bottomLeft.y * 100}
-                              `}
-                              fill="black"
-                            />
-                          )}
-                        </mask>
-                      </defs>
-
-                      {/* Darkened area outside document */}
-                      <rect
-                        x="0" y="0" width="100" height="100"
-                        fill="rgba(0,0,0,0.5)"
-                        mask="url(#docMask)"
-                      />
-
-                      {/* Detected document outline */}
-                      {detectedQuad && (
-                        <>
-                          {/* Main polygon outline */}
-                          <polygon
-                            points={`
-                              ${detectedQuad.topLeft.x * 100},${detectedQuad.topLeft.y * 100}
-                              ${detectedQuad.topRight.x * 100},${detectedQuad.topRight.y * 100}
-                              ${detectedQuad.bottomRight.x * 100},${detectedQuad.bottomRight.y * 100}
-                              ${detectedQuad.bottomLeft.x * 100},${detectedQuad.bottomLeft.y * 100}
-                            `}
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="0.5"
-                            strokeLinejoin="round"
-                          />
-
-                          {/* Corner circles with glow effect */}
-                          <circle cx={detectedQuad.topLeft.x * 100} cy={detectedQuad.topLeft.y * 100} r="2" fill="#22c55e" filter="url(#glow)" />
-                          <circle cx={detectedQuad.topRight.x * 100} cy={detectedQuad.topRight.y * 100} r="2" fill="#22c55e" filter="url(#glow)" />
-                          <circle cx={detectedQuad.bottomRight.x * 100} cy={detectedQuad.bottomRight.y * 100} r="2" fill="#22c55e" filter="url(#glow)" />
-                          <circle cx={detectedQuad.bottomLeft.x * 100} cy={detectedQuad.bottomLeft.y * 100} r="2" fill="#22c55e" filter="url(#glow)" />
-
-                          {/* Corner L-brackets */}
-                          {/* Top-left bracket */}
-                          <path
-                            d={`M ${detectedQuad.topLeft.x * 100 + 5},${detectedQuad.topLeft.y * 100} 
-                                L ${detectedQuad.topLeft.x * 100},${detectedQuad.topLeft.y * 100} 
-                                L ${detectedQuad.topLeft.x * 100},${detectedQuad.topLeft.y * 100 + 5}`}
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="1"
-                            strokeLinecap="round"
-                          />
-                          {/* Top-right bracket */}
-                          <path
-                            d={`M ${detectedQuad.topRight.x * 100 - 5},${detectedQuad.topRight.y * 100} 
-                                L ${detectedQuad.topRight.x * 100},${detectedQuad.topRight.y * 100} 
-                                L ${detectedQuad.topRight.x * 100},${detectedQuad.topRight.y * 100 + 5}`}
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="1"
-                            strokeLinecap="round"
-                          />
-                          {/* Bottom-right bracket */}
-                          <path
-                            d={`M ${detectedQuad.bottomRight.x * 100 - 5},${detectedQuad.bottomRight.y * 100} 
-                                L ${detectedQuad.bottomRight.x * 100},${detectedQuad.bottomRight.y * 100} 
-                                L ${detectedQuad.bottomRight.x * 100},${detectedQuad.bottomRight.y * 100 - 5}`}
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="1"
-                            strokeLinecap="round"
-                          />
-                          {/* Bottom-left bracket */}
-                          <path
-                            d={`M ${detectedQuad.bottomLeft.x * 100 + 5},${detectedQuad.bottomLeft.y * 100} 
-                                L ${detectedQuad.bottomLeft.x * 100},${detectedQuad.bottomLeft.y * 100} 
-                                L ${detectedQuad.bottomLeft.x * 100},${detectedQuad.bottomLeft.y * 100 - 5}`}
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="1"
-                            strokeLinecap="round"
-                          />
-
-                          {/* Glow filter */}
-                          <defs>
-                            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                              <feGaussianBlur stdDeviation="0.5" result="coloredBlur" />
-                              <feMerge>
-                                <feMergeNode in="coloredBlur" />
-                                <feMergeNode in="SourceGraphic" />
-                              </feMerge>
-                            </filter>
-                          </defs>
-                        </>
-                      )}
-
-                      {/* Fallback guide when no document detected */}
-                      {!detectedQuad && (
-                        <>
-                          <rect
-                            x="10" y="10" width="80" height="80"
-                            fill="none"
-                            stroke="rgba(69, 202, 255, 0.5)"
-                            strokeWidth="0.3"
-                            strokeDasharray="2,2"
-                            rx="1"
-                          />
-                          {/* Center crosshair */}
-                          <line x1="48" y1="50" x2="52" y2="50" stroke="rgba(69, 202, 255, 0.5)" strokeWidth="0.3" />
-                          <line x1="50" y1="48" x2="50" y2="52" stroke="rgba(69, 202, 255, 0.5)" strokeWidth="0.3" />
-                        </>
-                      )}
-                    </svg>
+                      <Flex alignItems="center" gap={3}>
+                        <Box
+                          w={4}
+                          h={4}
+                          borderRadius="full"
+                          bg="white"
+                          animation="pulse 1s infinite"
+                          boxShadow="0 0 10px rgba(255,255,255,0.8)"
+                        />
+                        <Box textAlign="center">
+                          <Text fontSize="sm" fontWeight="bold" lineHeight="1.2">
+                            🧪 TEST CAPTURE MODE
+                          </Text>
+                          <Text fontSize="xs" opacity={0.9}>
+                            Testing calibration delay settings
+                          </Text>
+                        </Box>
+                      </Flex>
+                    </Flex>
                   )}
 
                   {/* PROMINENT AUTO-CAPTURE ACTIVE BANNER - Always visible when auto-capture is ON */}
@@ -2177,6 +2394,31 @@ const Phone: React.FC = () => {
                     />
                     {detectedQuad ? "Document Detected" : "Searching..."}
                   </Box>
+
+                  {/* Compact Delay Settings Display - Bottom left corner, always visible in fullscreen */}
+                  {isFullScreen && (
+                    <Flex
+                      position="absolute"
+                      bottom={3}
+                      left={3}
+                      bg="rgba(0, 0, 0, 0.7)"
+                      backdropFilter="blur(10px)"
+                      color="white"
+                      px={3}
+                      py={2}
+                      borderRadius="lg"
+                      fontSize="xs"
+                      gap={2}
+                      alignItems="center"
+                      zIndex={20}
+                      border="1px solid rgba(255, 255, 255, 0.1)"
+                    >
+                      <Iconify icon="solar:clock-circle-bold" boxSize={3} />
+                      <Text fontWeight="600">{initialDelay}s</Text>
+                      <Text opacity={0.7}>•</Text>
+                      <Text fontWeight="600">{interCaptureDelay}s</Text>
+                    </Flex>
+                  )}
 
                   {/* Eye Toggle Button */}
                   <Tooltip label={showControls ? 'Hide controls' : 'Show controls'} hasArrow placement="left">

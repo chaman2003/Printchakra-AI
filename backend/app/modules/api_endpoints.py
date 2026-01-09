@@ -34,7 +34,7 @@ def create_enhanced_endpoints(
                                  processing_status, update_processing_status, clear_processing_status)
     """
 
-    from modules.enhanced_pipeline import EnhancedDocumentPipeline
+    from app.modules.pipeline.enhanced import EnhancedDocumentPipeline
 
     # Initialize pipeline with callback for Socket.IO progress
     def emit_progress(progress_data):

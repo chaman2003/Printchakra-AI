@@ -9,7 +9,21 @@ $frontendPath = "c:\Users\chama\OneDrive\Desktop\printchakra\frontend"
 $backendPath = "c:\Users\chama\OneDrive\Desktop\printchakra\backend"
 $certPath = "c:\Users\chama\OneDrive\Desktop\printchakra\backend\certs\cert.pem"
 $keyPath = "c:\Users\chama\OneDrive\Desktop\printchakra\backend\certs\key.pem"
-$apiUrl = "https://10.116.132.88:5000"
+
+# Auto-detect local IP address (excludes 169.254.x.x link-local addresses)
+$localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { 
+    $_.InterfaceAlias -notlike "*Loopback*" -and 
+    $_.IPAddress -ne "127.0.0.1" -and 
+    $_.IPAddress -notlike "169.254.*" 
+} | Select-Object -First 1).IPAddress
+
+if (-not $localIP) {
+    Write-Host "ERROR: Could not detect local IP address!" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Detected Local IP: $localIP" -ForegroundColor Green
+$apiUrl = "https://${localIP}:5000"
 
 # Create frontend script (runs in separate window)
 $frontendScript = @"
@@ -48,6 +62,7 @@ Write-Host ""
 cd $backendPath
 $env:SSL_CERT = $certPath
 $env:SSL_KEY = $keyPath
+$env:LOCAL_IP = $localIP
 
 Write-Host "Backend starting (Whisper model pre-loading in background)..." -ForegroundColor Cyan
 Write-Host ""

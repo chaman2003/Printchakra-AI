@@ -18,52 +18,109 @@ class ImageProcessingModule:
         """Initialize image processing module"""
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-    def find_document_contours(self, image: np.ndarray) -> Tuple[Optional[np.ndarray], List]:
+    def find_document_contours(self, image: np.ndarray, debug: bool = False) -> Tuple[Optional[np.ndarray], List]:
         """
-        Find document boundaries using edge and contour detection with error handling
+        Find document boundaries using multi-scale Canny edge detection (matching notebook).
+
+        Uses the notebook's approach:
+        - Scale down to 25% for faster processing
+        - Gaussian blur (5,5)
+        - Multiple Canny thresholds: [(30, 100), (50, 150), (75, 200)]
+        - Dilation with (2,2) kernel, 2 iterations
+        - Area threshold: 10% of image area
 
         Args:
             image: Input image
+            debug: Print debug information
 
         Returns:
             Tuple of (document_contour, all_contours)
         """
         try:
-            # Convert to grayscale
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
-
-            # Apply Gaussian blur to reduce noise
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-            # Edge detection using Canny
-            edges = cv2.Canny(blurred, 50, 150)
-
-            # Find contours
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            if not contours:
+            # Validate input
+            if image is None or image.size == 0:
+                if debug:
+                    print("      [Contour Detection] Invalid input image")
                 return None, []
 
-            # Sort contours by area (largest first)
-            contours = sorted(contours, key=cv2.contourArea, reverse=True)
+            # Scale down for faster processing (matching notebook scale=0.25)
+            scale = 0.25
+            small = cv2.resize(image, (0, 0), fx=scale, fy=scale)
 
+            # Convert to grayscale safely
+            if len(small.shape) == 3:
+                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = small.copy()
+
+            # Apply Gaussian blur (5,5) - matching notebook exactly
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+            all_contours = []
             document_contour = None
 
-            # Find the largest rectangular contour (likely the document)
-            for contour in contours[:10]:  # Check top 10 largest
-                # Approximate the contour
-                peri = cv2.arcLength(contour, True)
-                if peri == 0:  # Skip degenerate contours
+            # Try multiple Canny thresholds - matching notebook: [(30, 100), (50, 150), (75, 200)]
+            for low, high in [(30, 100), (50, 150), (75, 200)]:
+                try:
+                    # Canny edge detection
+                    edges = cv2.Canny(blurred, low, high)
+                    
+                    # Dilation with (2,2) kernel, 2 iterations - matching notebook
+                    edges = cv2.dilate(edges, np.ones((2, 2)), iterations=2)
+
+                    # Find contours
+                    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+                    if not contours:
+                        continue
+
+                    # Sort by area (largest first) and take top 10 - matching notebook
+                    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
+                    all_contours.extend(contours)
+
+                    # Find rectangular contour (document)
+                    for contour in contours:
+                        peri = cv2.arcLength(contour, True)
+                        if peri == 0:
+                            continue
+
+                        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+
+                        # Document should have 4 corners
+                        if len(approx) == 4:
+                            area = cv2.contourArea(approx)
+                            # Check area > 10% of image area (matching notebook)
+                            if area > gray.shape[0] * gray.shape[1] * 0.1:
+                                # Scale contour back to original size
+                                scaled_approx = (approx.reshape(4, 2) / scale).astype(np.int32)
+                                document_contour = scaled_approx.reshape(4, 1, 2)
+                                
+                                if debug:
+                                    print(f"      [Contour Detection] Found document with Canny({low}, {high})")
+                                
+                                # Scale all contours back to original size
+                                scaled_contours = []
+                                for c in all_contours:
+                                    scaled_c = (c.astype(np.float32) / scale).astype(np.int32)
+                                    scaled_contours.append(scaled_c)
+                                
+                                return document_contour, scaled_contours
+
+                except Exception as canny_err:
+                    if debug:
+                        print(f"      [Contour Detection] Canny({low}, {high}) failed: {str(canny_err)}")
                     continue
 
-                approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+            # Scale remaining contours if no document found
+            scaled_contours = []
+            for c in all_contours:
+                scaled_c = (c.astype(np.float32) / scale).astype(np.int32)
+                scaled_contours.append(scaled_c)
 
-                # Document should have 4 corners
-                if len(approx) == 4:
-                    document_contour = approx
-                    break
+            if debug:
+                print(f"      [Contour Detection] No 4-corner document found, returning {len(scaled_contours)} contours")
 
-            return document_contour, contours
+            return document_contour, scaled_contours
 
         except Exception as e:
             print(f"      [Contour Detection Error] {str(e)}")

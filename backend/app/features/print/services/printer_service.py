@@ -52,6 +52,8 @@ $printers = Get-Printer | Sort-Object -Property Name
 $result = @()
 foreach ($printer in $printers) {
     $jobs = @()
+    
+    # Method 1: Try Get-PrintJob (standard API)
     try {
         $jobs = Get-PrintJob -PrinterName $printer.Name -ErrorAction Stop | ForEach-Object {
             [PSCustomObject]@{
@@ -65,12 +67,51 @@ foreach ($printer in $printers) {
                 sizeBytes = $_.Size
             }
         }
-    } catch {}
+    } catch {
+        # Method 2: Fallback to WMI if Get-PrintJob fails
+        try {
+            $wmiJobs = Get-WmiObject -Class Win32_PrintJob -Filter "Name like '%$($printer.Name)%'" -ErrorAction Stop
+            $jobs = $wmiJobs | ForEach-Object {
+                [PSCustomObject]@{
+                    id = $_.JobId
+                    document = $_.Document
+                    owner = $_.Owner
+                    status = $_.Status
+                    submitted = $_.TimeSubmitted
+                    totalPages = $_.TotalPages
+                    pagesPrinted = $_.PagesPrinted
+                    sizeBytes = $_.Size
+                }
+            }
+        } catch {
+            # Method 3: Last resort - check spool directory for .SPL/.SHD files
+            try {
+                $spoolPath = Join-Path $env:windir 'System32\spool\PRINTERS'
+                if (Test-Path $spoolPath) {
+                    $spoolFiles = Get-ChildItem -Path $spoolPath -Filter '*.SPL' -ErrorAction SilentlyContinue
+                    $jobs = $spoolFiles | ForEach-Object {
+                        $shdFile = Join-Path $spoolPath ($_.BaseName + '.SHD')
+                        [PSCustomObject]@{
+                            id = $_.BaseName
+                            document = $_.Name
+                            owner = 'unknown'
+                            status = 'spooling'
+                            submitted = $_.CreationTime.ToString('o')
+                            totalPages = $null
+                            pagesPrinted = $null
+                            sizeBytes = $_.Length
+                        }
+                    }
+                }
+            } catch {}
+        }
+    }
+    
     $result += [PSCustomObject]@{
         name = $printer.Name
         status = $printer.PrinterStatus
         isDefault = $printer.Default
-        jobs = $jobs
+        jobs = @($jobs)
     }
 }
 $result | ConvertTo-Json -Depth 6
@@ -393,3 +434,276 @@ $result | ConvertTo-Json -Depth 6
                 self._config[key] = value
         
         return self._config.copy()
+    
+    def list_printers(self) -> List[Dict[str, Any]]:
+        """
+        List all available printers.
+        
+        Returns:
+            List of printer info dictionaries
+        """
+        queues = self.get_printer_queues()
+        return [
+            {
+                "name": p["name"],
+                "status": p["status"],
+                "isDefault": p.get("isDefault", False),
+            }
+            for p in queues
+        ]
+    
+    def get_printer_status(self, printer_name: str) -> Dict[str, Any]:
+        """
+        Get status of a specific printer.
+        
+        Args:
+            printer_name: Name of the printer
+            
+        Returns:
+            Status dictionary
+        """
+        queues = self.get_printer_queues()
+        
+        for printer in queues:
+            if printer["name"] == printer_name:
+                return {
+                    "online": printer["status"] not in ["offline", "error"],
+                    "state": printer["status"],
+                    "jobs_pending": len(printer.get("jobs", []))
+                }
+        
+        return {
+            "online": False,
+            "state": "not found",
+            "jobs_pending": 0
+        }
+    
+    def get_printer_capabilities(self, printer_name: str) -> Dict[str, Any]:
+        """
+        Get capabilities of a specific printer.
+        
+        Args:
+            printer_name: Name of the printer
+            
+        Returns:
+            Capabilities dictionary
+        """
+        # Default capabilities - in a real implementation, query the printer
+        return {
+            "color": True,
+            "duplex": False,
+            "paper_sizes": ["A4", "Letter", "Legal", "A3", "A5"],
+            "default_paper_size": "A4",
+            "resolutions": [300, 600, 1200],
+            "default_resolution": 300
+        }
+    
+    def set_default_printer(self, printer_name: str) -> bool:
+        """
+        Set the default printer.
+        
+        Args:
+            printer_name: Name of printer to set as default
+            
+        Returns:
+            True if successful
+        """
+        if sys.platform.startswith("win"):
+            try:
+                script = f'(Get-WmiObject -Query "SELECT * FROM Win32_Printer WHERE Name=\'{printer_name}\'").SetDefaultPrinter()'
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                return result.returncode == 0
+            except Exception as e:
+                logger.error(f"Failed to set default printer: {e}")
+                return False
+        else:
+            try:
+                result = subprocess.run(
+                    ["lpoptions", "-d", printer_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                return result.returncode == 0
+            except Exception as e:
+                logger.error(f"Failed to set default printer: {e}")
+                return False
+    
+    def get_settings(self) -> Dict[str, Any]:
+        """
+        Get global print settings.
+        
+        Returns:
+            Settings dictionary
+        """
+        return {
+            "default_copies": self._config.get("copies", 1),
+            "default_color": self._config.get("color_mode", "color") == "color",
+            "default_duplex": self._config.get("duplex", False),
+            "default_paper_size": self._config.get("paper_size", "a4").upper(),
+            "auto_fit_page": True
+        }
+    
+    def update_settings(self, settings: Dict[str, Any]) -> None:
+        """
+        Update global print settings.
+        
+        Args:
+            settings: Settings dictionary
+        """
+        if "default_copies" in settings:
+            self._config["copies"] = settings["default_copies"]
+        if "default_color" in settings:
+            self._config["color_mode"] = "color" if settings["default_color"] else "grayscale"
+        if "default_duplex" in settings:
+            self._config["duplex"] = settings["default_duplex"]
+        if "default_paper_size" in settings:
+            self._config["paper_size"] = settings["default_paper_size"].lower()
+    
+    def get_queue(self, printer_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get print queue for a printer.
+        
+        Args:
+            printer_name: Name of printer, or None for default
+            
+        Returns:
+            List of jobs in queue
+        """
+        queues = self.get_printer_queues()
+        
+        if printer_name:
+            for printer in queues:
+                if printer["name"] == printer_name:
+                    return printer.get("jobs", [])
+            return []
+        else:
+            # Return all jobs from all printers
+            all_jobs = []
+            for printer in queues:
+                for job in printer.get("jobs", []):
+                    job["printer"] = printer["name"]
+                    all_jobs.append(job)
+            return all_jobs
+    
+    def pause_queue(self, printer_name: Optional[str] = None) -> bool:
+        """
+        Pause print queue.
+        
+        Args:
+            printer_name: Name of printer, or None for default
+            
+        Returns:
+            True if successful
+        """
+        target = printer_name or self.get_default_printer()
+        if not target:
+            return False
+        
+        if sys.platform.startswith("win"):
+            try:
+                script = f'Set-Printer -Name "{target}" -PrinterStatus Paused'
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", script],
+                    capture_output=True,
+                    timeout=15
+                )
+                return result.returncode == 0
+            except Exception:
+                return False
+        else:
+            try:
+                result = subprocess.run(
+                    ["cupsdisable", target],
+                    capture_output=True,
+                    timeout=15
+                )
+                return result.returncode == 0
+            except Exception:
+                return False
+    
+    def resume_queue(self, printer_name: Optional[str] = None) -> bool:
+        """
+        Resume print queue.
+        
+        Args:
+            printer_name: Name of printer, or None for default
+            
+        Returns:
+            True if successful
+        """
+        target = printer_name or self.get_default_printer()
+        if not target:
+            return False
+        
+        if sys.platform.startswith("win"):
+            try:
+                script = f'Set-Printer -Name "{target}" -PrinterStatus Normal'
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", script],
+                    capture_output=True,
+                    timeout=15
+                )
+                return result.returncode == 0
+            except Exception:
+                return False
+        else:
+            try:
+                result = subprocess.run(
+                    ["cupsenable", target],
+                    capture_output=True,
+                    timeout=15
+                )
+                return result.returncode == 0
+            except Exception:
+                return False
+    
+    def reorder_queue(self, printer_name: Optional[str], order: List[str]) -> bool:
+        """
+        Reorder print queue (not typically supported by OS print systems).
+        
+        Args:
+            printer_name: Name of printer
+            order: New order of job IDs
+            
+        Returns:
+            True if successful (always False for most systems)
+        """
+        # Most print systems don't support reordering
+        logger.warning("Queue reordering is not supported by most print systems")
+        return False
+    
+    def get_queue_stats(self) -> Dict[str, Any]:
+        """
+        Get print queue statistics.
+        
+        Returns:
+            Statistics dictionary
+        """
+        queues = self.get_printer_queues()
+        
+        stats = {
+            "pending": 0,
+            "printing": 0,
+            "completed": 0,
+            "failed": 0,
+            "total": 0
+        }
+        
+        for printer in queues:
+            for job in printer.get("jobs", []):
+                stats["total"] += 1
+                status = (job.get("status") or "").lower()
+                if "print" in status:
+                    stats["printing"] += 1
+                elif "error" in status or "fail" in status:
+                    stats["failed"] += 1
+                else:
+                    stats["pending"] += 1
+        
+        return stats

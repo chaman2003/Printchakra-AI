@@ -44,31 +44,75 @@ def four_point_transform(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
     return warped
 
 
-def find_document(image: np.ndarray) -> Optional[np.ndarray]:
+def find_document(image: np.ndarray, debug: bool = False) -> Optional[np.ndarray]:
     """
-    Detect document boundaries using multi-scale edge detection.
+    Detect document boundaries using multi-scale Canny edge detection.
     Returns 4 corner points or None if not detected.
-    """
-    scale = 0.25
-    small = cv2.resize(image, (0, 0), fx=scale, fy=scale)
-    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     
-    # Try multiple Canny thresholds
-    for low, high in [(30, 100), (50, 150), (75, 200)]:
-        edges = cv2.Canny(blurred, low, high)
-        edges = cv2.dilate(edges, np.ones((2, 2)), iterations=2)
-        contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
+    Matching notebook implementation:
+    - Scale down to 25% for faster processing
+    - Gaussian blur (5,5)
+    - Multiple Canny thresholds: [(30, 100), (50, 150), (75, 200)]
+    - Dilation with (2,2) kernel, 2 iterations
+    - Area threshold: 10% of image area
+    """
+    try:
+        # Validate input
+        if image is None or image.size == 0:
+            if debug:
+                print("find_document: Invalid input image")
+            return None
         
-        for c in contours:
-            peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-            if len(approx) == 4:
-                area = cv2.contourArea(approx)
-                if area > small.shape[0] * small.shape[1] * 0.1:
-                    return (approx.reshape(4, 2) / scale).astype(np.float32)
-    return None
+        # Scale down for faster processing (matching notebook)
+        scale = 0.25
+        small = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+        
+        # Convert to grayscale safely
+        if len(small.shape) == 3:
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = small.copy()
+        
+        # Gaussian blur (5,5) - matching notebook exactly
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        
+        # Try multiple Canny thresholds - matching notebook
+        for low, high in [(30, 100), (50, 150), (75, 200)]:
+            try:
+                edges = cv2.Canny(blurred, low, high)
+                # Dilation with (2,2) kernel, 2 iterations - matching notebook
+                edges = cv2.dilate(edges, np.ones((2, 2)), iterations=2)
+                
+                contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                # Sort by area and take top 10 - matching notebook
+                contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
+                
+                for c in contours:
+                    peri = cv2.arcLength(c, True)
+                    if peri == 0:
+                        continue
+                    approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+                    if len(approx) == 4:
+                        area = cv2.contourArea(approx)
+                        # Check area > 10% of image (matching notebook)
+                        if area > gray.shape[0] * gray.shape[1] * 0.1:
+                            if debug:
+                                print(f"find_document: Found with Canny({low}, {high})")
+                            return (approx.reshape(4, 2) / scale).astype(np.float32)
+                            
+            except Exception as canny_err:
+                if debug:
+                    print(f"find_document: Canny({low}, {high}) failed: {str(canny_err)}")
+                continue
+        
+        if debug:
+            print("find_document: No 4-corner document found")
+        return None
+        
+    except Exception as e:
+        if debug:
+            print(f"find_document: Error - {str(e)}")
+        return None
 
 
 def estimate_background(gray: np.ndarray, kernel_ratio: int = 8) -> np.ndarray:

@@ -65,7 +65,7 @@ class OCRModule:
         Returns:
             Tuple of (best_text, statistics_dict)
         """
-        from .image_enhancement import ImageEnhancer
+        from app.modules.image.enhancement import ImageEnhancer
 
         configs = [
             ("PSM 3 (Auto)", "--oem 3 --psm 3"),
@@ -248,70 +248,79 @@ class DocumentClassifier:
         Returns:
             Feature vector
         """
-        # Convert to grayscale
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
+        try:
+            # Convert to grayscale safely
+            if len(image.shape) == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = image.copy()
 
-        # Feature 1: Aspect ratio
-        h, w = gray.shape
-        aspect_ratio = w / h if h > 0 else 1.0
+            # Feature 1: Aspect ratio
+            h, w = gray.shape
+            aspect_ratio = w / h if h > 0 else 1.0
 
-        # Feature 2: Text density (approximate)
-        _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
-        text_density = np.sum(binary > 0) / binary.size
+            # Feature 2: Text density (approximate)
+            _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
+            text_density = np.sum(binary > 0) / binary.size
 
-        # Feature 3: Edge density
-        edges = cv2.Canny(gray, 50, 150)
-        edge_density = np.sum(edges > 0) / edges.size
+            # Feature 3: Edge density using Canny (matching notebook thresholds)
+            try:
+                edges = cv2.Canny(gray, 50, 150)
+                edge_density = np.sum(edges > 0) / edges.size
+            except Exception:
+                edges = np.zeros_like(gray)
+                edge_density = 0.0
 
-        # Feature 4: Horizontal lines (common in bills/receipts)
-        lines = cv2.HoughLinesP(
-            edges, 1, np.pi / 180, threshold=50, minLineLength=100, maxLineGap=10
-        )
-        horizontal_lines = 0
-        if lines is not None:
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
-                if angle < 10 or angle > 170:  # Nearly horizontal
-                    horizontal_lines += 1
+            # Feature 4: Horizontal lines (common in bills/receipts)
+            lines = cv2.HoughLinesP(
+                edges, 1, np.pi / 180, threshold=50, minLineLength=100, maxLineGap=10
+            )
+            horizontal_lines = 0
+            if lines is not None:
+                for line in lines:
+                    x1, y1, x2, y2 = line[0]
+                    angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
+                    if angle < 10 or angle > 170:  # Nearly horizontal
+                        horizontal_lines += 1
 
-        # Feature 5: Vertical lines (common in forms)
-        vertical_lines = 0
-        if lines is not None:
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
-                if 80 < angle < 100:  # Nearly vertical
-                    vertical_lines += 1
+            # Feature 5: Vertical lines (common in forms)
+            vertical_lines = 0
+            if lines is not None:
+                for line in lines:
+                    x1, y1, x2, y2 = line[0]
+                    angle = abs(np.degrees(np.arctan2(y2 - y1, x2 - x1)))
+                    if 80 < angle < 100:  # Nearly vertical
+                        vertical_lines += 1
 
-        # Feature 6: Mean intensity
-        mean_intensity = np.mean(gray)
+            # Feature 6: Mean intensity
+            mean_intensity = np.mean(gray)
 
-        # Feature 7: Std deviation of intensity
-        std_intensity = np.std(gray)
+            # Feature 7: Std deviation of intensity
+            std_intensity = np.std(gray)
 
-        # Feature 8: Contour count (complexity)
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contour_count = len(contours)
+            # Feature 8: Contour count (complexity)
+            contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contour_count = len(contours)
 
-        # Combine features
-        features = np.array(
-            [
-                aspect_ratio,
-                text_density,
-                edge_density,
-                horizontal_lines,
-                vertical_lines,
-                mean_intensity,
-                std_intensity,
-                contour_count,
-            ]
-        )
+            # Combine features
+            features = np.array(
+                [
+                    aspect_ratio,
+                    text_density,
+                    edge_density,
+                    horizontal_lines,
+                    vertical_lines,
+                    mean_intensity,
+                    std_intensity,
+                    contour_count,
+                ]
+            )
 
-        return features
+            return features
+
+        except Exception as e:
+            # Return default features on error
+            return np.zeros(8)
 
     def train(self, images: List[np.ndarray], labels: List[str]):
         """
@@ -439,3 +448,15 @@ class AIEnhancer:
 
 
 print("[OK] OCR module loaded (improved multi-config)")
+
+# Global OCR service instance for convenience
+ocr_service = OCRModule()
+
+__all__ = [
+    'OCRModule',
+    'ocr_service',
+    'PADDLE_OCR_AVAILABLE',
+]
+
+if PADDLE_OCR_AVAILABLE:
+    __all__.extend(['PaddleOCRProcessor', 'OCRResult', 'get_ocr_processor', 'get_paddle_ocr'])

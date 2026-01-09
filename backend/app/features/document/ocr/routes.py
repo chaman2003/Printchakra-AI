@@ -60,10 +60,69 @@ def run_ocr(filename):
         # Save result
         service.save_result(filename, result)
         
+        # Auto-rename file based on OCR content if title is available
+        new_filename = filename
+        if result.derived_title and result.derived_title not in ["Untitled Document", "Error Processing Document"]:
+            try:
+                # Generate sanitized filename from derived title
+                import re
+                sanitized_title = result.derived_title.lower().strip()
+                sanitized_title = re.sub(r'[^a-z0-9]+', '_', sanitized_title)
+                sanitized_title = re.sub(r'_+', '_', sanitized_title)
+                sanitized_title = sanitized_title.strip('_')
+                
+                # Limit length
+                if len(sanitized_title) > 50:
+                    sanitized_title = sanitized_title[:50].rsplit('_', 1)[0]
+                
+                if sanitized_title and sanitized_title != "untitled":
+                    # Extract timestamp from original filename if present
+                    timestamp_match = re.search(r'_(\d{8}_\d{6})_', filename)
+                    timestamp = timestamp_match.group(1) if timestamp_match else None
+                    
+                    # Get extension
+                    ext = os.path.splitext(filename)[1]
+                    
+                    # Build new filename
+                    if timestamp:
+                        new_filename_base = f"{sanitized_title}_{timestamp}"
+                    else:
+                        new_filename_base = sanitized_title
+                    
+                    new_filename = f"{new_filename_base}{ext}"
+                    new_image_path = os.path.join(os.path.dirname(image_path), new_filename)
+                    
+                    # Avoid overwriting existing files
+                    counter = 1
+                    while os.path.exists(new_image_path) and new_image_path != image_path:
+                        new_filename = f"{new_filename_base}_{counter}{ext}"
+                        new_image_path = os.path.join(os.path.dirname(image_path), new_filename)
+                        counter += 1
+                    
+                    # Rename the file
+                    if new_image_path != image_path and not os.path.exists(new_image_path):
+                        os.rename(image_path, new_image_path)
+                        current_app.logger.info(f"File renamed: {filename} -> {new_filename}")
+                        
+                        # Update OCR result with new filename
+                        service.save_result(new_filename, result)
+                        
+                        # Remove old OCR result file
+                        old_ocr_path = service._get_result_path(filename)
+                        if os.path.exists(old_ocr_path) and old_ocr_path != service._get_result_path(new_filename):
+                            try:
+                                os.remove(old_ocr_path)
+                            except:
+                                pass
+            except Exception as rename_error:
+                current_app.logger.warning(f"File rename failed: {rename_error}")
+                # Continue with original filename
+        
         # Prepare response
         response_data = {
             "success": True,
-            "filename": filename,
+            "filename": new_filename,  # Return new filename
+            "original_filename": filename if new_filename != filename else None,
             "ocr_result": result.to_dict(),
             "ocr_ready": True,
         }
@@ -78,13 +137,15 @@ def run_ocr(filename):
         try:
             from app.core import socketio
             socketio.emit("ocr_complete", {
-                "filename": filename,
+                "filename": new_filename,
+                "original_filename": filename if new_filename != filename else None,
                 "success": True,
                 "result": result.to_dict(),
                 "derived_title": result.derived_title,
                 "word_count": result.word_count,
                 "confidence": result.confidence_avg,
                 "has_text": result.word_count > 0,
+                "renamed": new_filename != filename,
             })
         except Exception as socket_error:
             current_app.logger.warning(f"Socket.IO emit failed: {socket_error}")

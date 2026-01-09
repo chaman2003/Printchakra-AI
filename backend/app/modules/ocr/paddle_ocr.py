@@ -794,7 +794,7 @@ Respond with ONLY the filename (lowercase, underscores, no extension)."""
             filename = filename[:50].rsplit('_', 1)[0]
         return filename or "untitled"
     
-    def save_result(self, filename: str, result: OCRResult) -> str:
+    def save_result(self, filename: str, result: OCRResult) -> Optional[str]:
         """
         Save OCR result to JSON file
         
@@ -803,8 +803,13 @@ Respond with ONLY the filename (lowercase, underscores, no extension)."""
             result: OCR result to save
             
         Returns:
-            Path to saved JSON file
+            Path to saved JSON file, or None if result is invalid/error
         """
+        # Don't save error results with no text
+        if result.word_count == 0 and result.derived_title in ["Error Processing Document", "Untitled Document"]:
+            logger.warning(f"[OCR] Skipping save for error/empty result: {filename}")
+            return None
+            
         # Create filename for OCR result
         base_name = os.path.splitext(filename)[0]
         json_filename = f"{base_name}_ocr.json"
@@ -825,24 +830,40 @@ Respond with ONLY the filename (lowercase, underscores, no extension)."""
             filename: Original image filename
             
         Returns:
-            OCR result dict or None if not found
+            OCR result dict or None if not found or invalid
         """
         base_name = os.path.splitext(filename)[0]
         json_filename = f"{base_name}_ocr.json"
         json_path = os.path.join(self.ocr_data_dir, json_filename)
         
         if os.path.exists(json_path):
-            with open(json_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    result = json.load(f)
+                
+                # Validate result - skip error/empty results
+                if result.get('word_count', 0) == 0 and result.get('derived_title') in ["Error Processing Document", "Untitled Document"]:
+                    logger.warning(f"[OCR] Skipping invalid/error result for: {filename}")
+                    # Delete the bad result file
+                    try:
+                        os.remove(json_path)
+                        logger.info(f"[OCR] Deleted invalid result file: {json_path}")
+                    except:
+                        pass
+                    return None
+                    
+                return result
+            except json.JSONDecodeError as e:
+                logger.error(f"[OCR] Failed to parse JSON for {filename}: {e}")
+                return None
         
         return None
     
     def has_ocr_result(self, filename: str) -> bool:
-        """Check if OCR result exists for a file"""
-        base_name = os.path.splitext(filename)[0]
-        json_filename = f"{base_name}_ocr.json"
-        json_path = os.path.join(self.ocr_data_dir, json_filename)
-        return os.path.exists(json_path)
+        """Check if valid OCR result exists for a file"""
+        # Use load_result which validates the result
+        result = self.load_result(filename)
+        return result is not None and result.get('word_count', 0) > 0
 
 
 # Global processor instance
