@@ -219,3 +219,7 @@ references.txt
 
 # gstack (global install)
 .amazonq/rules/gstack.md
+.env*
+
+# The frontend's static assets live in a folder named public, which the rule above would hide.
+!frontend/public

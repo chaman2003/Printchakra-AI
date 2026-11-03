@@ -82,6 +82,8 @@ import { DashboardShell } from '../components/layout/DashboardRegions';
 import { FileInfo, FolderInfo, Document, OCRResult } from '../types';
 import { processFileForPreview } from '../utils/pdfUtils';
 import { parseVoiceDocumentSelection } from '../utils/voiceDocumentSelectionParser';
+import { printWithBrowser, BrowserPrintItem } from '../utils/browserPrint';
+import { withToken } from '../auth/session';
 import { onVoiceCommand } from '../aiassist/commandBus';
 import { runOCR, getOCRResult, getBatchOCRStatus } from '../ocrApi';
 import { OCRReadyBadge } from '../components/document/OCROverlay';
@@ -523,7 +525,7 @@ const Dashboard: React.FC = () => {
         filename: file.filename,
         size: file.size,
         type: file.mime_type?.includes('pdf') ? 'pdf' : 'image',
-        thumbnailUrl: `${API_BASE_URL}/thumbnail/${file.filename}`,
+        thumbnailUrl: withToken(`${API_BASE_URL}/document/thumbnails/${encodeURIComponent(file.filename)}`),
         isProcessed: file.has_text,
       })),
     [files]
@@ -535,7 +537,7 @@ const Dashboard: React.FC = () => {
         filename: file.filename,
         size: file.size || 0,
         type: 'pdf',
-        thumbnailUrl: `${API_BASE_URL}/thumbnail/${file.filename}`,
+        thumbnailUrl: withToken(`${API_BASE_URL}/document/thumbnails/${encodeURIComponent(file.filename)}`),
         isProcessed: true,
       })),
     [processedConvertedDocs, convertedFiles]
@@ -693,6 +695,7 @@ const Dashboard: React.FC = () => {
   );
   // Refs for async callbacks that are defined later
   const executePrintJobRef = React.useRef<(() => Promise<void>) | null>(null);
+  const handleRunOCRRef = React.useRef<((filename: string) => Promise<void>) | null>(null);
   const executeScanJobRef = React.useRef<(() => Promise<void>) | null>(null);
 
   const {
@@ -742,7 +745,7 @@ const Dashboard: React.FC = () => {
               for (const page of file.pages) {
                 pagesInfo.push({
                   pageNumber: parseInt(page.filename.match(/page_(\d+)/)?.[1] || '1'),
-                  thumbnailUrl: page.url || `${API_BASE_URL}/converted-page/${page.path}`,
+                  thumbnailUrl: withToken(page.url || `${API_BASE_URL}/converted-page/${page.path}`),
                   width: 0,
                   height: 0,
                 });
@@ -772,7 +775,7 @@ const Dashboard: React.FC = () => {
                   filename: file.filename,
                   size: file.size || 0,
                   type: 'pdf',
-                  thumbnailUrl: `${API_BASE_URL}/thumbnail/${file.filename}`,
+                  thumbnailUrl: withToken(`${API_BASE_URL}/document/thumbnails/${encodeURIComponent(file.filename)}`),
                 });
                 continue;
               }
@@ -801,7 +804,7 @@ const Dashboard: React.FC = () => {
               filename: file.filename,
               size: file.size || 0,
               type: 'pdf',
-              thumbnailUrl: `${API_BASE_URL}/thumbnail/${file.filename}`,
+              thumbnailUrl: withToken(`${API_BASE_URL}/document/thumbnails/${encodeURIComponent(file.filename)}`),
             });
           }
         }
@@ -1325,8 +1328,8 @@ const Dashboard: React.FC = () => {
       return (
         <Box
           border="1px solid"
-          borderColor="rgba(121,95,238,0.35)"
-          bg="rgba(121,95,238,0.08)"
+          borderColor="rgba(17, 17, 17,0.35)"
+          bg="rgba(17, 17, 17,0.08)"
           borderRadius="xl"
           p={4}
           mb={4}
@@ -1522,6 +1525,27 @@ const Dashboard: React.FC = () => {
         }
 
         // ==================== New Commands ====================
+        case 'start_print':
+        case 'start_scan': {
+          // Open the print or scan workflow, as if the user said "print" or "scan".
+          voiceOrchestrationTriggerRef.current?.(command === 'start_print' ? 'print' : 'scan');
+          break;
+        }
+
+        case 'run_ocr': {
+          // OCR the named file, else the selected one, else the newest document.
+          const target =
+            params?.filename ||
+            selectedFiles[0] ||
+            filesCacheRef.current.data?.[0]?.filename;
+          if (!target) {
+            toast({ title: 'No document', description: 'Upload or capture a document first.', status: 'warning', duration: 3000 });
+            break;
+          }
+          handleRunOCRRef.current?.(target);
+          break;
+        }
+
         case 'clear_print_queue': {
           try {
             await apiClient.post(API_ENDPOINTS.printerClearQueue);
@@ -2893,7 +2917,7 @@ const Dashboard: React.FC = () => {
 
   // Derived color values to avoid calling hooks conditionally inside JSX
   const systemModalBgGradient = useColorModeValue(
-    'linear-gradient(135deg, #ffffff 0%, #f8f7ff 100%)',
+    'linear-gradient(135deg, #ffffff 0%, #f6f6f6 100%)',
     'linear-gradient(135deg, #1a202c 0%, #2d3748 100%)'
   );
   const validatorBoxBg = useColorModeValue('rgba(255,255,255,0.5)', 'rgba(0,0,0,0.2)');
@@ -3635,6 +3659,9 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Lets the voice-command handler (defined earlier) call the latest OCR runner.
+  handleRunOCRRef.current = handleRunOCR;
+
   const handleViewOCRResult = async (filename: string) => {
     // If we already have the result cached, just open the view
     if (ocrResults[filename]) {
@@ -3880,6 +3907,7 @@ const Dashboard: React.FC = () => {
 
       let successCount = 0;
       let failCount = 0;
+      const browserPrintItems: BrowserPrintItem[] = [];
 
       // Print all documents immediately (no waiting)
       for (let i = 0; i < documentsToprint.length; i++) {
@@ -3897,6 +3925,13 @@ const Dashboard: React.FC = () => {
           if (response.data.success) {
             successCount++;
             console.log(`[PRINT] Success: ${filename}`);
+            // Cloud deployment: no physical printer, so the browser prints the file.
+            if (response.data.print_mode === 'browser' && response.data.document_url) {
+              browserPrintItems.push({
+                url: response.data.document_url,
+                copies: Number(orchestrateOptions.printCopies) || 1,
+              });
+            }
           } else {
             failCount++;
             console.error(`[PRINT] Failed: ${filename}`, response.data.error);
@@ -3904,6 +3939,21 @@ const Dashboard: React.FC = () => {
         } catch (err: any) {
           failCount++;
           console.error(`[PRINT] Error printing ${filename}:`, err);
+        }
+      }
+
+      if (browserPrintItems.length > 0) {
+        try {
+          await printWithBrowser(browserPrintItems);
+        } catch (err: any) {
+          failCount += browserPrintItems.length;
+          successCount = Math.max(0, successCount - browserPrintItems.length);
+          toast({
+            title: 'Could not open the print dialog',
+            description: err?.message || 'Try again, or download the file and print it.',
+            status: 'error',
+            duration: 5000,
+          });
         }
       }
 
@@ -4506,7 +4556,7 @@ const Dashboard: React.FC = () => {
           )}
 
           {processingProgress && (
-            <Card bg={surfaceCard} border="1px solid rgba(121,95,238,0.15)" boxShadow="subtle">
+            <Card bg={surfaceCard} border="1px solid rgba(17, 17, 17,0.15)" boxShadow="subtle">
               <CardHeader>
                 <Heading size="sm">
                   Processing · Step {processingProgress.step}/{processingProgress.total_steps} ·{' '}
@@ -4728,7 +4778,7 @@ const Dashboard: React.FC = () => {
                           display="flex"
                           alignItems="center"
                           justifyContent="center"
-                          boxShadow="0 8px 32px rgba(121,95,238,0.3)"
+                          boxShadow="0 8px 32px rgba(17, 17, 17,0.3)"
                         >
                           <Iconify icon={FiFileText} boxSize={10} color="white" />
                         </Box>
@@ -4809,7 +4859,7 @@ const Dashboard: React.FC = () => {
                               position="relative"
                               borderRadius="xl"
                               overflow="hidden"
-                              border="1px solid rgba(121,95,238,0.18)"
+                              border="1px solid rgba(17, 17, 17,0.18)"
                               _hover={{
                                 borderColor: 'brand.300',
                                 transform: file.processing ? undefined : 'translateY(-4px)',
@@ -4958,7 +5008,7 @@ const Dashboard: React.FC = () => {
               </Box>
 
               {selectedFile && ocrText && (
-                <Card border="1px solid rgba(69,202,255,0.25)" bg={surfaceCard} boxShadow="subtle">
+                <Card border="1px solid rgba(17, 17, 17,0.25)" bg={surfaceCard} boxShadow="subtle">
                   <CardHeader display="flex" alignItems="center" justifyContent="space-between">
                     <Heading size="sm">OCR · {selectedFile}</Heading>
                     <Button
@@ -4982,7 +5032,7 @@ const Dashboard: React.FC = () => {
                       fontSize="sm"
                       maxH="320px"
                       overflowY="auto"
-                      boxShadow="inset 0 0 0 1px rgba(69,202,255,0.18)"
+                      boxShadow="inset 0 0 0 1px rgba(17, 17, 17,0.18)"
                     >
                       {ocrText}
                     </Box>
@@ -5003,7 +5053,7 @@ const Dashboard: React.FC = () => {
             <ModalContent
               bg={surfaceCard}
               borderRadius="2xl"
-              border="1px solid rgba(121,95,238,0.25)"
+              border="1px solid rgba(17, 17, 17,0.25)"
               boxShadow="halo"
               maxH={{ base: '95vh', md: '90vh' }}
               m={{ base: 2, md: 4 }}
@@ -5205,7 +5255,7 @@ const Dashboard: React.FC = () => {
                   <OCRStructuredView
                     result={ocrResults[activeOCRView]}
                     filename={activeOCRView}
-                    imageUrl={`${API_BASE_URL}${API_ENDPOINTS.processed}/${activeOCRView}`}
+                    imageUrl={withToken(`${API_BASE_URL}${API_ENDPOINTS.processed}/${activeOCRView}`)}
                     onRetry={() => {
                       if (activeOCRView) {
                         handleRunOCR(activeOCRView);
@@ -5263,7 +5313,7 @@ const Dashboard: React.FC = () => {
 
           <Modal isOpen={conversionModal.isOpen} onClose={closeConversionModal} size="lg">
             <ModalOverlay bg="blackAlpha.600" />
-            <ModalContent bg={surfaceCard} borderRadius="2xl" border="1px solid rgba(121,95,238,0.25)">
+            <ModalContent bg={surfaceCard} borderRadius="2xl" border="1px solid rgba(17, 17, 17,0.25)">
               <ModalHeader>Convert Files</ModalHeader>
               <ModalCloseButton />
               <ModalBody>
@@ -5277,7 +5327,7 @@ const Dashboard: React.FC = () => {
                       bg="surface.blur"
                       borderRadius="lg"
                       p={3}
-                      border="1px solid rgba(121,95,238,0.2)"
+                      border="1px solid rgba(17, 17, 17,0.2)"
                     >
                       <Stack spacing={2} fontSize="sm">
                         {selectedFiles.map((filename: string, index: number) => (
@@ -5314,7 +5364,7 @@ const Dashboard: React.FC = () => {
                       bg="surface.blur"
                       borderRadius="lg"
                       p={3}
-                      border="1px solid rgba(69,202,255,0.25)"
+                      border="1px solid rgba(17, 17, 17,0.25)"
                     >
                       <Stack spacing={1}>
                         <Text fontWeight="600">Merge into single PDF</Text>
@@ -5358,10 +5408,10 @@ const Dashboard: React.FC = () => {
 
                   {conversionProgress && (
                     <Box
-                      bg="rgba(69,202,255,0.1)"
+                      bg="rgba(17, 17, 17,0.1)"
                       borderRadius="lg"
                       p={3}
-                      border="1px solid rgba(69,202,255,0.2)"
+                      border="1px solid rgba(17, 17, 17,0.2)"
                     >
                       <Text fontFamily="mono" whiteSpace="pre-wrap" color="brand.200">
                         {conversionProgress}
@@ -5393,7 +5443,7 @@ const Dashboard: React.FC = () => {
             size="md"
           >
             <DrawerOverlay bg="blackAlpha.600" />
-            <DrawerContent bg={surfaceCard} borderColor="rgba(121,95,238,0.25)" borderLeftWidth="1px">
+            <DrawerContent bg={surfaceCard} borderColor="rgba(17, 17, 17,0.25)" borderLeftWidth="1px">
               <DrawerHeader display="flex" alignItems="center" justifyContent="space-between">
                 <Heading size="sm">Converted Files</Heading>
                 <Button size="sm" variant="ghost" onClick={convertedDrawer.onClose}>
@@ -5414,7 +5464,7 @@ const Dashboard: React.FC = () => {
                         <Card
                           key={file.filename}
                           borderRadius="xl"
-                          border="1px solid rgba(69,202,255,0.18)"
+                          border="1px solid rgba(17, 17, 17,0.18)"
                         >
                           <CardBody>
                             <Stack spacing={3}>
@@ -5539,7 +5589,7 @@ const Dashboard: React.FC = () => {
                 borderRadius={isVoiceOrchestration ? '2xl' : { base: 'xl', md: '2xl', lg: '3xl' }}
                 border="1px solid"
                 borderColor="brand.300"
-                boxShadow="0 25px 60px rgba(121, 95, 238, 0.4)"
+                boxShadow="0 25px 60px rgba(17, 17, 17, 0.4)"
                 maxH={MODAL_CONFIG.modal.maxHeight}
                 maxW={isChatVisible ? `calc(100vw - ${chatWidth + 20}px)` : MODAL_CONFIG.modal.maxWidth}
                 w={isChatVisible ? `calc(100vw - ${chatWidth + 20}px)` : 'auto'}
@@ -5599,7 +5649,7 @@ const Dashboard: React.FC = () => {
                                 borderRadius="2xl"
                                 border="3px solid"
                                 borderColor={orchestrateMode === 'scan' ? 'brand.400' : 'whiteAlpha.200'}
-                                bg={orchestrateMode === 'scan' ? 'rgba(121,95,238,0.12)' : 'whiteAlpha.50'}
+                                bg={orchestrateMode === 'scan' ? 'rgba(17, 17, 17,0.12)' : 'whiteAlpha.50'}
                                 cursor="pointer"
                                 onClick={() => setOrchestrateMode('scan')}
                                 position="relative"
@@ -5611,7 +5661,7 @@ const Dashboard: React.FC = () => {
                                   borderColor: 'brand.400',
                                   y: -8,
                                   scale: 1.02,
-                                  boxShadow: '0 12px 30px rgba(121,95,238,0.35)',
+                                  boxShadow: '0 12px 30px rgba(17, 17, 17,0.35)',
                                   transition: { duration: 0.2 },
                                 }}
                                 whileTap={{ scale: 0.98 }}
@@ -5645,7 +5695,7 @@ const Dashboard: React.FC = () => {
                                 borderRadius="2xl"
                                 border="3px solid"
                                 borderColor={orchestrateMode === 'print' ? 'brand.400' : 'whiteAlpha.200'}
-                                bg={orchestrateMode === 'print' ? 'rgba(121,95,238,0.12)' : 'whiteAlpha.50'}
+                                bg={orchestrateMode === 'print' ? 'rgba(17, 17, 17,0.12)' : 'whiteAlpha.50'}
                                 cursor="pointer"
                                 onClick={() => setOrchestrateMode('print')}
                                 position="relative"
@@ -5657,7 +5707,7 @@ const Dashboard: React.FC = () => {
                                   borderColor: 'brand.400',
                                   y: -8,
                                   scale: 1.02,
-                                  boxShadow: '0 12px 30px rgba(121,95,238,0.35)',
+                                  boxShadow: '0 12px 30px rgba(17, 17, 17,0.35)',
                                   transition: { duration: 0.2 },
                                 }}
                                 whileTap={{ scale: 0.98 }}
@@ -5764,12 +5814,12 @@ const Dashboard: React.FC = () => {
                                     borderRadius="2xl"
                                     border="3px solid"
                                     borderColor="brand.400"
-                                    bg="rgba(121,95,238,0.08)"
+                                    bg="rgba(17, 17, 17,0.08)"
                                     _hover={{
                                       borderColor: 'brand.500',
-                                      bg: 'rgba(121,95,238,0.15)',
+                                      bg: 'rgba(17, 17, 17,0.15)',
                                       transform: 'translateY(-4px)',
-                                      boxShadow: '0 12px 30px rgba(121,95,238,0.3)',
+                                      boxShadow: '0 12px 30px rgba(17, 17, 17,0.3)',
                                     }}
                                     transition="all 0.3s"
                                     onClick={() => {
@@ -5880,11 +5930,11 @@ const Dashboard: React.FC = () => {
                                 '&::-webkit-scrollbar': { width: '8px' },
                                 '&::-webkit-scrollbar-track': { background: 'transparent' },
                                 '&::-webkit-scrollbar-thumb': {
-                                  background: 'rgba(121,95,238,0.4)',
+                                  background: 'rgba(17, 17, 17,0.4)',
                                   borderRadius: '10px',
                                 },
                                 '&::-webkit-scrollbar-thumb:hover': {
-                                  background: 'rgba(121,95,238,0.6)',
+                                  background: 'rgba(17, 17, 17,0.6)',
                                 },
                               }}
                             >
@@ -6037,7 +6087,7 @@ const Dashboard: React.FC = () => {
                                       fontWeight="600"
                                       _hover={{
                                         transform: 'translateY(-2px)',
-                                        boxShadow: '0 8px 20px rgba(121,95,238,0.3)',
+                                        boxShadow: '0 8px 20px rgba(17, 17, 17,0.3)',
                                       }}
                                       transition="all 0.3s"
                                     >
@@ -6164,7 +6214,7 @@ const Dashboard: React.FC = () => {
                                         _hover={{ borderColor: 'brand.400' }}
                                         _focus={{
                                           borderColor: 'brand.500',
-                                          boxShadow: '0 0 0 3px rgba(121,95,238,0.2)',
+                                          boxShadow: '0 0 0 3px rgba(17, 17, 17,0.2)',
                                         }}
                                       >
                                         <option value="single">📄 Single Page</option>
@@ -6181,7 +6231,7 @@ const Dashboard: React.FC = () => {
                                       border="2px solid"
                                       borderColor={orchestrateOptions.scanTextMode ? 'brand.400' : 'whiteAlpha.200'}
                                       bg={
-                                        orchestrateOptions.scanTextMode ? 'rgba(121,95,238,0.08)' : 'whiteAlpha.50'
+                                        orchestrateOptions.scanTextMode ? 'rgba(17, 17, 17,0.08)' : 'whiteAlpha.50'
                                       }
                                       transition="all 0.3s"
                                       _hover={{
@@ -6480,12 +6530,12 @@ const Dashboard: React.FC = () => {
                                     borderRadius="xl"
                                     border="2px solid"
                                     borderColor="brand.400"
-                                    bg="rgba(121,95,238,0.12)"
+                                    bg="rgba(17, 17, 17,0.12)"
                                     transition="all 0.3s"
                                     _hover={{
                                       transform: 'scale(1.02)',
                                       borderColor: 'brand.500',
-                                      boxShadow: '0 8px 20px rgba(121,95,238,0.3)',
+                                      boxShadow: '0 8px 20px rgba(17, 17, 17,0.3)',
                                     }}
                                   >
                                     <Checkbox
@@ -6639,11 +6689,11 @@ const Dashboard: React.FC = () => {
                             '&::-webkit-scrollbar': { width: '8px' },
                             '&::-webkit-scrollbar-track': { background: 'transparent' },
                             '&::-webkit-scrollbar-thumb': {
-                              background: 'rgba(69,202,255,0.4)',
+                              background: 'rgba(17, 17, 17,0.4)',
                               borderRadius: '10px',
                             },
                             '&::-webkit-scrollbar-thumb:hover': {
-                              background: 'rgba(69,202,255,0.6)',
+                              background: 'rgba(17, 17, 17,0.6)',
                             },
                           }}
                         >
@@ -6789,7 +6839,7 @@ const Dashboard: React.FC = () => {
                                 fontWeight="600"
                                 _hover={{
                                   transform: 'translateY(-2px)',
-                                  boxShadow: '0 8px 20px rgba(69,202,255,0.3)',
+                                  boxShadow: '0 8px 20px rgba(17, 17, 17,0.3)',
                                 }}
                                 transition="all 0.3s"
                               >
@@ -7062,7 +7112,7 @@ const Dashboard: React.FC = () => {
                                 borderRadius="lg"
                                 border="1px solid"
                                 borderColor="brand.400"
-                                bg="rgba(121,95,238,0.1)"
+                                bg="rgba(17, 17, 17,0.1)"
                                 transition="all 0.3s"
                                 _hover={{ transform: 'scale(1.02)', borderColor: 'brand.500' }}
                               >
@@ -7190,12 +7240,12 @@ const Dashboard: React.FC = () => {
                         <ModalBody py={8} px={10}>
                           <Stack spacing={6}>
                             <Box
-                              bg="linear-gradient(135deg, rgba(121,95,238,0.15), rgba(69,202,255,0.15))"
+                              bg="linear-gradient(135deg, rgba(17, 17, 17,0.15), rgba(17, 17, 17,0.15))"
                               p={8}
                               borderRadius="2xl"
                               border="2px solid"
                               borderColor={orchestrateMode === 'scan' ? 'brand.300' : 'nebula.300'}
-                              boxShadow="0 8px 25px rgba(121,95,238,0.2)"
+                              boxShadow="0 8px 25px rgba(17, 17, 17,0.2)"
                             >
                               <Heading size="lg" mb={6} display="flex" alignItems="center" gap={3}>
                                 <Iconify
@@ -7581,7 +7631,7 @@ const Dashboard: React.FC = () => {
           bg={systemModalBgGradient}
           borderRadius="2xl"
           border="1px solid"
-          borderColor="rgba(121,95,238,0.2)"
+          borderColor="rgba(17, 17, 17,0.2)"
           boxShadow="0 20px 60px rgba(0,0,0,0.3)"
         >
           <ModalHeader
@@ -7603,7 +7653,7 @@ const Dashboard: React.FC = () => {
               borderRadius="xl"
               p={4}
               border="1px solid"
-              borderColor="rgba(121,95,238,0.15)"
+              borderColor="rgba(17, 17, 17,0.15)"
             >
               <ConnectionValidator
                 ref={connectionStatusRef}

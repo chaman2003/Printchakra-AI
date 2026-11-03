@@ -5,6 +5,7 @@ Camera capture endpoints from phone.
 """
 
 import os
+from app.core.paths import app_data_dir
 import logging
 import base64
 from flask import jsonify, request
@@ -15,7 +16,7 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-CAPTURE_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "uploads", "captures")
+CAPTURE_FOLDER = os.path.join(app_data_dir(), "uploads", "captures")
 
 
 @phone_bp.route("/capture", methods=["POST", "OPTIONS"])

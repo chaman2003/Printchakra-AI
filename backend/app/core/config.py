@@ -7,6 +7,8 @@ Centralized configuration management for the Flask application.
 import os
 from typing import Dict, Any
 
+from app.core.paths import data_root
+
 
 class BaseConfig:
     """Base configuration shared across all environments."""
@@ -25,7 +27,7 @@ class BaseConfig:
     # File paths
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     PUBLIC_DIR = os.path.join(BASE_DIR, "public")
-    DATA_DIR = os.path.join(PUBLIC_DIR, "data")
+    DATA_DIR = data_root(os.path.join(PUBLIC_DIR, "data"))
     
     # Data directories
     UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")

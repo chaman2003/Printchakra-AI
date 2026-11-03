@@ -1,427 +1,375 @@
 import { extendTheme, ThemeConfig } from '@chakra-ui/react';
-import { mode, StyleFunctionProps } from '@chakra-ui/theme-tools';
+import { StyleFunctionProps } from '@chakra-ui/theme-tools';
 
+/**
+ * Swiss editorial design system (see design.md at the repo root).
+ *
+ * Off-white #f2f2f2 canvas, #111111 text, hairline borders, square corners, pill buttons.
+ * The old brand scales (brand / nebula / cyber / neon, plus blue / purple / cyan / teal) all resolve to
+ * neutral grays, so every existing screen that says colorScheme="brand" picks up the new look.
+ * Status colors (red, green, orange, yellow) stay as they are because they carry meaning.
+ */
+
+export const palette = {
+  bg: '#f2f2f2',
+  ink: '#111111',
+  line: 'rgba(30, 30, 30, 0.1)',
+  lineStrong: 'rgba(30, 30, 30, 0.22)',
+  muted: '#838282',
+  soft: '#b6b5b5',
+  card: '#ffffff',
+  footer: '#1e1e1e',
+  echo: ['#bfbfbf', '#c9c9c9', '#d1d1d1', '#d9d9d9'],
+};
+
+// Light only: the design system has no dark variant.
 const config: ThemeConfig = {
-  initialColorMode: 'dark',
+  initialColorMode: 'light',
   useSystemColorMode: false,
+  disableTransitionOnChange: true,
 };
 
 const fonts = {
-  heading:
-    '"Plus Jakarta Sans Variable", "Space Grotesk Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  body: '"Plus Jakarta Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  mono: '"Space Grotesk Variable", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  heading: '"Clash Display", "Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  body: '"Satoshi", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+  serif: '"Instrument Serif", Georgia, "Times New Roman", serif',
+};
+
+const neutral = {
+  50: '#f6f6f6',
+  100: '#ececec',
+  200: '#d9d9d9',
+  300: '#bfbfbf',
+  400: '#838282',
+  500: '#1e1e1e',
+  600: '#111111',
+  700: '#0b0b0b',
+  800: '#050505',
+  900: '#000000',
 };
 
 const colors = {
-  brand: {
-    50: '#f3f1ff',
-    100: '#dcd6ff',
-    200: '#c3b7ff',
-    300: '#aa98ff',
-    400: '#9279ff',
-    500: '#795fee',
-    600: '#5b47bf',
-    700: '#422f8f',
-    800: '#2b1b60',
-    900: '#170d33',
-  },
-  nebula: {
-    50: '#ebfaff',
-    100: '#c4efff',
-    200: '#9ae3ff',
-    300: '#6fd7ff',
-    400: '#45caff',
-    500: '#2bb0e6',
-    600: '#1d88b4',
-    700: '#116182',
-    800: '#053952',
-    900: '#001322',
-  },
-  cyber: {
-    50: '#e0ffff',
-    100: '#b3f5ff',
-    200: '#80ebff',
-    300: '#4de0ff',
-    400: '#1ad6ff',
-    500: '#00bde6',
-    600: '#0093b3',
-    700: '#006980',
-    800: '#003f4d',
-    900: '#00161a',
-  },
-  neon: {
-    50: '#fff0f5',
-    100: '#ffd6e7',
-    200: '#ffb3d9',
-    300: '#ff80c4',
-    400: '#ff4daf',
-    500: '#e6339a',
-    600: '#b32678',
-    700: '#801a56',
-    800: '#4d0f34',
-    900: '#1a0512',
+  brand: neutral,
+  nebula: neutral,
+  cyber: neutral,
+  neon: neutral,
+  // Remap the accent hues the screens use for emphasis. Status colors are left alone.
+  blue: neutral,
+  purple: neutral,
+  cyan: neutral,
+  teal: neutral,
+  pink: neutral,
+  gray: {
+    50: '#f6f6f6',
+    100: '#ececec',
+    200: '#dcdcdc',
+    300: '#bfbfbf',
+    400: '#a3a2a2',
+    500: '#838282',
+    600: '#5f5e5e',
+    700: '#3f3f3f',
+    800: '#1e1e1e',
+    900: '#111111',
   },
 };
 
+const radii = {
+  none: '0',
+  sm: '2px',
+  base: '3px',
+  md: '4px',
+  lg: '6px',
+  xl: '8px',
+  '2xl': '10px',
+  '3xl': '14px',
+  full: '9999px',
+  glass: '6px',
+};
+
+// Flat by design: borders do the work that shadows usually do.
 const shadows = {
-  outline: '0 0 0 3px rgba(143, 133, 255, 0.55)',
-  halo: '0 18px 45px rgba(121, 95, 238, 0.35)',
-  haloDark: '0 18px 45px rgba(69, 202, 255, 0.45)',
-  subtle: '0 14px 30px rgba(12, 20, 56, 0.12)',
-  subtleDark: '0 14px 30px rgba(0, 0, 0, 0.55)',
-  neon: '0 0 20px rgba(29, 214, 255, 0.6), 0 0 40px rgba(121, 95, 238, 0.4)',
-  glow: '0 0 30px rgba(255, 77, 175, 0.5)',
-  xl: '0 20px 50px -12px rgba(0, 0, 0, 0.35)',
-  '2xl': '0 25px 60px -15px rgba(0, 0, 0, 0.45)',
+  outline: '0 0 0 2px rgba(17, 17, 17, 0.25)',
+  halo: 'none',
+  haloDark: 'none',
+  subtle: '0 1px 0 rgba(30, 30, 30, 0.06)',
+  subtleDark: '0 1px 0 rgba(30, 30, 30, 0.06)',
+  neon: 'none',
+  glow: 'none',
+  sm: '0 1px 0 rgba(30, 30, 30, 0.08)',
+  base: '0 1px 0 rgba(30, 30, 30, 0.08)',
+  md: '0 6px 24px rgba(17, 17, 17, 0.08)',
+  lg: '0 12px 40px rgba(17, 17, 17, 0.1)',
+  xl: '0 18px 50px rgba(17, 17, 17, 0.12)',
+  '2xl': '0 24px 60px rgba(17, 17, 17, 0.16)',
 };
 
 const semanticTokens = {
   colors: {
-    'surface.bg': {
-      default: '#F8FAFC',
-      _dark: '#0B0F19',
-    },
-    'surface.card': {
-      default: '#FFFFFF',
-      _dark: '#111522',
-    },
-    'surface.blur': {
-      default: 'rgba(255, 255, 255, 0.85)',
-      _dark: 'rgba(15,20,42,0.85)',
-    },
-    'surface.glass': {
-      default: 'rgba(245, 247, 255, 0.65)',
-      _dark: 'rgba(8,12,28,0.65)',
-    },
-    'border.focus': {
-      default: 'rgba(121, 95, 238, 0.65)',
-      _dark: 'rgba(69, 202, 255, 0.75)',
-    },
-    'border.default': {
-      default: 'rgba(121, 95, 238, 0.18)',
-      _dark: 'rgba(69, 202, 255, 0.25)',
-    },
-    'border.subtle': {
-      default: 'rgba(121, 95, 238, 0.08)',
-      _dark: 'rgba(69, 202, 255, 0.12)',
-    },
-    'text.primary': {
-      default: '#1a1f36',
-      _dark: '#e6ebff',
-    },
-    'text.muted': {
-      default: 'rgba(60, 72, 88, 0.72)',
-      _dark: 'rgba(196, 204, 255, 0.72)',
-    },
-    'text.inverse': {
-      default: '#ffffff',
-      _dark: '#0a0e1a',
-    },
-    'accent.primary': {
-      default: 'brand.500',
-      _dark: 'nebula.400',
-    },
-    'accent.secondary': {
-      default: 'nebula.500',
-      _dark: 'cyber.400',
-    },
-    'accent.tertiary': {
-      default: 'purple.500',
-      _dark: 'neon.400',
-    },
+    'surface.bg': palette.bg,
+    'surface.card': palette.card,
+    'surface.blur': 'rgba(242, 242, 242, 0.9)',
+    'surface.glass': 'rgba(255, 255, 255, 0.7)',
+    'border.focus': palette.ink,
+    'border.default': palette.lineStrong,
+    'border.subtle': palette.line,
+    'text.primary': palette.ink,
+    'text.muted': palette.muted,
+    'text.inverse': palette.bg,
+    'accent.primary': palette.ink,
+    'accent.secondary': palette.muted,
+    'accent.tertiary': palette.soft,
   },
-  radii: {
-    glass: '22px',
-  },
+  radii: { glass: '6px' },
 };
 
+const isNeutralScheme = (scheme?: string) =>
+  !scheme || ['brand', 'nebula', 'cyber', 'neon', 'blue', 'purple', 'cyan', 'teal', 'pink'].includes(scheme);
+
 const components = {
+  Heading: {
+    baseStyle: {
+      fontFamily: 'heading',
+      fontWeight: 700,
+      letterSpacing: '-0.03em',
+      lineHeight: 1,
+    },
+  },
   Button: {
     baseStyle: {
-      fontWeight: '600',
-      borderRadius: '18px',
+      fontWeight: 700,
+      borderRadius: 'full',
       letterSpacing: '0.02em',
-      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      transition: 'background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease',
+      _focusVisible: { boxShadow: 'outline' },
     },
     variants: {
-      solid: (props: StyleFunctionProps) => ({
-        bg: mode('brand.500', 'nebula.500')(props),
-        color: 'white',
-        boxShadow: mode(
-          '0 4px 14px rgba(121, 95, 238, 0.4)',
-          '0 4px 20px rgba(69, 202, 255, 0.5)'
-        )(props),
-        _hover: {
-          bg: mode('brand.600', 'nebula.600')(props),
-          transform: 'translateY(-2px)',
-          boxShadow: mode(
-            '0 8px 20px rgba(121, 95, 238, 0.5)',
-            '0 8px 30px rgba(69, 202, 255, 0.6)'
-          )(props),
-        },
-        _active: {
-          transform: 'translateY(0)',
-          boxShadow: mode(
-            '0 2px 8px rgba(121, 95, 238, 0.3)',
-            '0 2px 12px rgba(69, 202, 255, 0.4)'
-          )(props),
-        },
-      }),
-      outline: (props: StyleFunctionProps) => ({
-        borderColor: mode('brand.500', 'nebula.400')(props),
-        color: mode('brand.600', 'nebula.300')(props),
-        borderWidth: '2px',
-        _hover: {
-          bg: mode('brand.50', 'whiteAlpha.100')(props),
-          transform: 'translateY(-2px)',
-          boxShadow: mode(
-            '0 4px 12px rgba(121, 95, 238, 0.2)',
-            '0 4px 16px rgba(69, 202, 255, 0.3)'
-          )(props),
-        },
-      }),
-      ghost: (props: StyleFunctionProps) => ({
-        color: mode('brand.600', 'nebula.300')(props),
-        _hover: {
-          bg: mode('brand.50', 'whiteAlpha.100')(props),
-        },
-      }),
+      // Solid black pill that inverts to an outlined pill on hover.
+      solid: (props: StyleFunctionProps) =>
+        isNeutralScheme(props.colorScheme)
+          ? {
+              bg: palette.ink,
+              color: palette.bg,
+              border: '1px solid',
+              borderColor: palette.ink,
+              _hover: { bg: 'transparent', color: palette.ink, _disabled: { bg: palette.ink, color: palette.bg } },
+              _active: { bg: palette.line, transform: 'scale(0.98)' },
+            }
+          : {},
+      outline: (props: StyleFunctionProps) =>
+        isNeutralScheme(props.colorScheme)
+          ? {
+              border: '1px solid',
+              borderColor: '#1e1e1e',
+              color: palette.ink,
+              bg: 'transparent',
+              _hover: { bg: palette.ink, color: palette.bg },
+              _active: { transform: 'scale(0.98)' },
+            }
+          : {},
+      ghost: (props: StyleFunctionProps) =>
+        isNeutralScheme(props.colorScheme)
+          ? {
+              color: palette.ink,
+              _hover: { bg: 'rgba(17, 17, 17, 0.06)' },
+              _active: { bg: 'rgba(17, 17, 17, 0.1)' },
+            }
+          : {},
+      link: (props: StyleFunctionProps) =>
+        isNeutralScheme(props.colorScheme) ? { color: palette.ink, _hover: { color: palette.muted, textDecoration: 'none' } } : {},
     },
-    defaultProps: {
-      colorScheme: 'brand',
-    },
+    defaultProps: { colorScheme: 'brand' },
+  },
+  IconButton: {
+    baseStyle: { borderRadius: 'full' },
   },
   Card: {
-    baseStyle: (props: StyleFunctionProps) => ({
+    baseStyle: {
       container: {
-        bg: mode('rgba(255, 255, 255, 0.98)', 'rgba(12, 16, 35, 0.95)')(props),
-        borderRadius: '24px',
-        boxShadow: mode(
-          '0 14px 30px rgba(12, 20, 56, 0.12)',
-          '0 14px 30px rgba(0, 0, 0, 0.55)'
-        )(props),
-        border: mode(
-          '1px solid rgba(121, 95, 238, 0.12)',
-          '1px solid rgba(69, 202, 255, 0.18)'
-        )(props),
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        _hover: {
-          transform: 'translateY(-4px)',
-          boxShadow: mode(
-            '0 18px 40px rgba(121, 95, 238, 0.2)',
-            '0 18px 45px rgba(69, 202, 255, 0.35)'
-          )(props),
-        },
+        bg: palette.card,
+        borderRadius: 'md',
+        boxShadow: 'none',
+        border: '1px solid',
+        borderColor: palette.line,
+        transition: 'border-color 200ms ease, background-color 200ms ease',
+        _hover: { borderColor: palette.lineStrong },
       },
-    }),
+    },
   },
   Input: {
-    baseStyle: {
-      field: {
-        borderRadius: '16px',
-        transition: 'all 0.3s ease',
+    baseStyle: { field: { borderRadius: 'md', transition: 'border-color 160ms ease, background-color 160ms ease' } },
+    variants: {
+      filled: {
+        field: {
+          bg: palette.card,
+          border: '1px solid',
+          borderColor: palette.lineStrong,
+          _hover: { bg: palette.card, borderColor: palette.ink },
+          _focus: { bg: palette.card, borderColor: palette.ink, boxShadow: 'none' },
+          _focusVisible: { borderColor: palette.ink, boxShadow: 'none' },
+          _placeholder: { color: palette.soft },
+        },
       },
     },
+    defaultProps: { variant: 'filled' },
+  },
+  Textarea: {
     variants: {
-      filled: (props: StyleFunctionProps) => ({
-        field: {
-          bg: mode('rgba(255, 255, 255, 0.8)', 'rgba(20, 24, 45, 0.7)')(props),
-          border: mode(
-            '1px solid rgba(121, 95, 238, 0.08)',
-            '1px solid rgba(69, 202, 255, 0.15)'
-          )(props),
-          _focus: {
-            borderColor: mode('brand.500', 'nebula.400')(props),
-            boxShadow: mode(
-              '0 0 0 3px rgba(121, 95, 238, 0.15)',
-              '0 0 0 3px rgba(69, 202, 255, 0.25)'
-            )(props),
-            bg: mode('rgba(255, 255, 255, 0.95)', 'rgba(26, 32, 55, 0.85)')(props),
-          },
-          _hover: {
-            bg: mode('rgba(255, 255, 255, 0.9)', 'rgba(26, 32, 55, 0.8)')(props),
-          },
-        },
-      }),
+      filled: {
+        bg: palette.card,
+        border: '1px solid',
+        borderColor: palette.lineStrong,
+        borderRadius: 'md',
+        _hover: { bg: palette.card, borderColor: palette.ink },
+        _focus: { bg: palette.card, borderColor: palette.ink, boxShadow: 'none' },
+      },
     },
-    defaultProps: {
-      variant: 'filled',
-    },
+    defaultProps: { variant: 'filled' },
   },
   Select: {
-    baseStyle: {
-      field: {
-        borderRadius: '16px',
-      },
-    },
-    defaultProps: {
-      variant: 'filled',
-    },
+    baseStyle: { field: { borderRadius: 'md' } },
+    defaultProps: { variant: 'filled' },
   },
   Menu: {
-    baseStyle: (props: StyleFunctionProps) => ({
+    baseStyle: {
       list: {
-        borderRadius: '16px',
-        boxShadow: mode('lg', '0 20px 50px rgba(0, 0, 0, 0.6)')(props),
-        border: mode(
-          '1px solid rgba(121, 95, 238, 0.18)',
-          '1px solid rgba(69, 202, 255, 0.25)'
-        )(props),
-        bg: mode('rgba(255, 255, 255, 0.98)', 'rgba(12, 16, 35, 0.98)')(props),
+        borderRadius: 'md',
+        boxShadow: 'md',
+        border: '1px solid',
+        borderColor: palette.line,
+        bg: palette.card,
+        py: 1,
       },
       item: {
-        borderRadius: '12px',
-        _focus: {
-          bg: mode('brand.50', 'whiteAlpha.100')(props),
-        },
-        _hover: {
-          bg: mode('brand.50', 'whiteAlpha.100')(props),
-        },
+        borderRadius: 'sm',
+        fontWeight: 500,
+        _focus: { bg: 'rgba(17, 17, 17, 0.06)' },
+        _hover: { bg: 'rgba(17, 17, 17, 0.06)' },
       },
-    }),
+    },
   },
   Modal: {
-    baseStyle: (props: StyleFunctionProps) => ({
+    baseStyle: {
       dialog: {
-        bg: mode('rgba(255, 255, 255, 0.98)', 'rgba(12, 16, 35, 0.98)')(props),
-        backdropFilter: 'none',
-        boxShadow: mode(
-          '0 25px 60px rgba(121, 95, 238, 0.3)',
-          '0 25px 60px rgba(0, 0, 0, 0.7)'
-        )(props),
+        bg: palette.card,
+        borderRadius: 'md',
+        border: '1px solid',
+        borderColor: palette.line,
+        boxShadow: '2xl',
       },
-      overlay: {
-        backdropFilter: 'none',
-        bg: mode('rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0.75)')(props),
-      },
-    }),
+      overlay: { backdropFilter: 'blur(4px)', bg: 'rgba(17, 17, 17, 0.45)' },
+      header: { fontFamily: 'heading', fontWeight: 700, letterSpacing: '-0.02em' },
+    },
   },
   Drawer: {
-    baseStyle: (props: StyleFunctionProps) => ({
-      dialog: {
-        bg: mode('rgba(255, 255, 255, 0.98)', 'rgba(12, 16, 35, 0.98)')(props),
-        backdropFilter: 'none',
-      },
-      overlay: {
-        backdropFilter: 'none',
-        bg: mode('rgba(0, 0, 0, 0.5)', 'rgba(0, 0, 0, 0.75)')(props),
-      },
-    }),
+    baseStyle: {
+      dialog: { bg: palette.card, borderLeft: '1px solid', borderColor: palette.line },
+      overlay: { backdropFilter: 'blur(4px)', bg: 'rgba(17, 17, 17, 0.45)' },
+    },
+  },
+  Popover: {
+    baseStyle: {
+      content: { borderRadius: 'md', borderColor: palette.line, boxShadow: 'md' },
+    },
+  },
+  Tooltip: {
+    baseStyle: { bg: palette.ink, color: palette.bg, borderRadius: 'sm', fontWeight: 500, px: 3, py: 1.5 },
   },
   Progress: {
-    baseStyle: (props: StyleFunctionProps) => ({
-      track: {
-        bg: mode('gray.200', 'whiteAlpha.200')(props),
-        borderRadius: 'full',
-      },
-      filledTrack: {
-        bgGradient: mode(
-          'linear(to-r, brand.400, nebula.400)',
-          'linear(to-r, nebula.400, cyber.400)'
-        )(props),
-      },
-    }),
+    baseStyle: {
+      track: { bg: 'rgba(17, 17, 17, 0.08)', borderRadius: 'full' },
+      filledTrack: { bg: palette.ink },
+    },
   },
   Badge: {
     baseStyle: {
       borderRadius: 'full',
       px: 3,
-      py: 1,
-      fontWeight: '600',
-      fontSize: 'xs',
+      py: 0.5,
+      fontWeight: 700,
+      fontSize: '10px',
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+    },
+    variants: {
+      subtle: (props: StyleFunctionProps) =>
+        isNeutralScheme(props.colorScheme)
+          ? { bg: 'rgba(17, 17, 17, 0.07)', color: palette.ink }
+          : {},
     },
   },
   Tag: {
+    baseStyle: { container: { borderRadius: 'full', fontWeight: 700 } },
+  },
+  Switch: {
     baseStyle: {
-      container: {
-        borderRadius: 'full',
-        fontWeight: '600',
+      track: { bg: '#d1d1d1', _checked: { bg: palette.ink }, _focusVisible: { boxShadow: 'outline' } },
+    },
+  },
+  Checkbox: {
+    baseStyle: {
+      control: {
+        borderRadius: 'sm',
+        borderColor: palette.lineStrong,
+        _checked: { bg: palette.ink, borderColor: palette.ink, _hover: { bg: palette.ink, borderColor: palette.ink } },
       },
     },
   },
-  Switch: {
-    baseStyle: (props: StyleFunctionProps) => ({
-      track: {
-        bg: mode('gray.300', 'whiteAlpha.300')(props),
-        _checked: {
-          bg: mode('brand.500', 'nebula.500')(props),
-        },
-      },
-    }),
+  Tabs: {
+    variants: {
+      line: (props: StyleFunctionProps) =>
+        isNeutralScheme(props.colorScheme)
+          ? { tab: { fontWeight: 700, color: palette.muted, _selected: { color: palette.ink, borderColor: palette.ink } } }
+          : {},
+    },
+  },
+  Alert: {
+    baseStyle: { container: { borderRadius: 'md' } },
+  },
+  Divider: {
+    baseStyle: { borderColor: palette.line, opacity: 1 },
+  },
+  Link: {
+    baseStyle: { _hover: { textDecoration: 'none' } },
   },
 };
 
 const styles = {
-  global: (props: StyleFunctionProps) => ({
+  global: {
     'html, body': {
-      bg: mode('#F8FAFC', '#080c18')(props),
-      color: mode('#1a1f36', '#e6ebff')(props),
+      bg: palette.bg,
+      color: palette.ink,
+      fontFamily: 'body',
+      fontWeight: 500,
       fontFeatureSettings: '"clig" off, "liga" off',
       minHeight: '100dvh',
       width: '100%',
       overflowX: 'hidden',
     },
-    html: {
-      scrollBehavior: 'smooth',
-      // Responsive font sizing that scales with viewport
-      fontSize: 'clamp(14px, 0.9vw + 0.5rem, 18px)',
+    'h1, h2, h3, h4': { wordSpacing: '0.14em' },
+    html: { scrollBehavior: 'smooth', fontSize: 'clamp(14px, 0.35vw + 12.5px, 17px)' },
+    body: { position: 'relative', minWidth: '0', backgroundImage: 'none' },
+    '#root': { minHeight: '100dvh', width: '100%', display: 'flex', flexDirection: 'column' },
+    '*, *::before, *::after': { boxSizing: 'border-box' },
+    '::selection': { background: palette.ink, color: palette.bg },
+    '*::placeholder': { color: palette.soft },
+    'img, picture, video, canvas, svg': { display: 'block', maxWidth: '100%', height: 'auto' },
+    '::-webkit-scrollbar': { width: '10px', height: '10px' },
+    '::-webkit-scrollbar-track': { background: 'transparent' },
+    '::-webkit-scrollbar-thumb': { background: 'rgba(17, 17, 17, 0.22)', borderRadius: '10px', border: '2px solid #f2f2f2' },
+    '::-webkit-scrollbar-thumb:hover': { background: 'rgba(17, 17, 17, 0.4)' },
+    // Respect users who ask for less motion.
+    '@media (prefers-reduced-motion: reduce)': {
+      '*, *::before, *::after': { animationDuration: '0.01ms !important', transitionDuration: '0.01ms !important' },
     },
-    body: {
-      // Cleaner, more uniform background
-      background: mode(
-        '#F8FAFC',
-        '#080c18'
-      )(props),
-      backgroundAttachment: 'fixed',
-      position: 'relative',
-      minWidth: '0', // Prevent flex overflow
-    },
-    '#root': {
-      minHeight: '100dvh',
-      width: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-    },
-    '*, *::before, *::after': {
-      boxSizing: 'border-box',
-    },
-    '::selection': {
-      background: mode('brand.200', 'nebula.600')(props),
-      color: mode('brand.900', 'white')(props),
-    },
-    '*::placeholder': {
-      color: mode('gray.400', 'whiteAlpha.500')(props),
-    },
-    // Responsive images
-    'img, picture, video, canvas, svg': {
-      display: 'block',
-      maxWidth: '100%',
-      height: 'auto',
-    },
-    // Custom scrollbar
-    '::-webkit-scrollbar': {
-      width: '8px',
-      height: '8px',
-    },
-    '::-webkit-scrollbar-track': {
-      background: mode('rgba(0, 0, 0, 0.05)', 'rgba(255, 255, 255, 0.05)')(props),
-      borderRadius: '10px',
-    },
-    '::-webkit-scrollbar-thumb': {
-      background: mode('rgba(121, 95, 238, 0.3)', 'rgba(69, 202, 255, 0.3)')(props),
-      borderRadius: '10px',
-    },
-    '::-webkit-scrollbar-thumb:hover': {
-      background: mode('rgba(121, 95, 238, 0.5)', 'rgba(69, 202, 255, 0.5)')(props),
-    },
-  }),
+  },
 };
 
 const theme = extendTheme({
   config,
   fonts,
   colors,
+  radii,
   semanticTokens,
   components,
   styles,

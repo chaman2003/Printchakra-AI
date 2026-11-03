@@ -84,7 +84,7 @@ const SmartConnectionStatus = forwardRef<SmartConnectionStatusHandle, SmartConne
     'rgba(255, 255, 255, 0.7)',
     'rgba(15, 20, 35, 0.7)'
   );
-  const borderColor = useColorModeValue('rgba(121, 95, 238, 0.15)', 'rgba(69, 202, 255, 0.15)');
+  const borderColor = useColorModeValue('rgba(17, 17, 17, 0.15)', 'rgba(17, 17, 17, 0.15)');
   const isMinimal = variant === 'minimal';
 
   // Load saved session result on mount
@@ -461,8 +461,8 @@ const ConnectionCheckItem: React.FC<{
   const statusColor = status === 'connected' ? 'green.400' : status === 'failed' ? 'red.400' : 'yellow.400';
   const statusBg = status === 'connected' ? 'green' : status === 'failed' ? 'red' : status === 'checking' ? 'yellow' : 'gray';
   
-  const itemBg = useColorModeValue('rgba(121, 95, 238, 0.04)', 'rgba(255, 255, 255, 0.03)');
-  const itemBorder = useColorModeValue('rgba(121, 95, 238, 0.08)', 'rgba(255, 255, 255, 0.05)');
+  const itemBg = useColorModeValue('rgba(17, 17, 17, 0.04)', 'rgba(255, 255, 255, 0.03)');
+  const itemBorder = useColorModeValue('rgba(17, 17, 17, 0.08)', 'rgba(255, 255, 255, 0.05)');
 
   return (
     <HStack 
@@ -474,7 +474,7 @@ const ConnectionCheckItem: React.FC<{
       borderColor={itemBorder}
       w="full"
       transition="all 0.2s ease"
-      _hover={{ transform: 'translateX(2px)', bg: useColorModeValue('rgba(121, 95, 238, 0.06)', 'rgba(255, 255, 255, 0.05)') }}
+      _hover={{ transform: 'translateX(2px)', bg: useColorModeValue('rgba(17, 17, 17, 0.06)', 'rgba(255, 255, 255, 0.05)') }}
     >
       <Box 
         position="relative" 

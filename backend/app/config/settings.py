@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import List
 
+from app.core.paths import data_root, logs_root
+
 try:  # Optional dependency, documented in requirements
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover - fallback when python-dotenv missing
@@ -15,7 +17,7 @@ except ImportError:  # pragma: no cover - fallback when python-dotenv missing
 # Base directories
 CONFIG_DIR = Path(__file__).parent
 BASE_DIR = CONFIG_DIR.parent.absolute()
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(data_root(BASE_DIR / "data"))
 
 # Optional .env overrides (keeps configuration English-editable)
 ENV_FILE = BASE_DIR / ".env"
@@ -50,7 +52,7 @@ PDF_DIR = DATA_DIR / "pdfs"
 CONVERTED_DIR = DATA_DIR / "converted"
 MODELS_DIR = DATA_DIR / "models"
 PRINT_DIR = BASE_DIR / "app" / "print_scripts"
-LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR = Path(logs_root(BASE_DIR / "logs"))
 
 # Ensure all directories exist
 for directory in [

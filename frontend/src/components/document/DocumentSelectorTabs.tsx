@@ -289,7 +289,7 @@ export default function DocumentSelectorTabs({
               border="2px dashed"
               borderColor={isDragging ? 'brand.400' : borderColor}
               borderRadius="xl"
-              bg={isDragging ? 'rgba(121,95,238,0.1)' : 'transparent'}
+              bg={isDragging ? 'rgba(17, 17, 17,0.1)' : 'transparent'}
               transition="all 0.3s"
               cursor="pointer"
               pointerEvents="auto"
@@ -350,7 +350,7 @@ export default function DocumentSelectorTabs({
             />
 
             {isUploading && (
-              <Flex align="center" justify="center" p={4} bg="rgba(121,95,238,0.1)" borderRadius="lg">
+              <Flex align="center" justify="center" p={4} bg="rgba(17, 17, 17,0.1)" borderRadius="lg">
                 <Spinner size="md" color="brand.400" mr={3} />
                 <Text color="brand.300">{uploadProgress || 'Processing files...'}</Text>
               </Flex>

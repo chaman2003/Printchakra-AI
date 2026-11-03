@@ -28,6 +28,7 @@ from werkzeug.utils import secure_filename
 
 from app.core import socketio
 from app.core.config import get_data_dirs
+from app.core.paths import IS_CLOUD
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,12 @@ class PhoneToDashboardFlow:
                     "message": "Starting 12-step processing",
                 },
             )
+            if IS_CLOUD:
+                # Serverless functions are frozen as soon as the response is sent, so a background
+                # thread would never finish. Process inside the request instead.
+                self._run_image_pipeline_async(artifact, enhancement_params)
+                return "enhanced_12_step"
+
             worker = threading.Thread(
                 target=self._run_image_pipeline_async,
                 args=(artifact, enhancement_params),
@@ -208,7 +215,9 @@ class PhoneToDashboardFlow:
                     f.write(extracted_text)
 
             ocr_result = (stats or {}).get("ocr_result")
-            if isinstance(ocr_result, dict):
+            # An empty result usually means OCR failed (e.g. the model was overloaded). Do not save it,
+            # otherwise it would be served as the final answer and block a later retry.
+            if isinstance(ocr_result, dict) and ocr_result.get("word_count"):
                 ocr_json_path = os.path.join(
                     self.ocr_data_dir,
                     f"{os.path.splitext(artifact.filename)[0]}_ocr.json",

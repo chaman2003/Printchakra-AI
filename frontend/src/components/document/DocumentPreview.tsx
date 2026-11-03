@@ -104,7 +104,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   // Updated to match SurfaceCard theme
   const bgColor = useColorModeValue('rgba(255, 248, 240, 0.95)', 'rgba(12, 16, 35, 0.92)');
-  const borderColor = useColorModeValue('rgba(121, 95, 238, 0.18)', 'rgba(69, 202, 255, 0.25)');
+  const borderColor = useColorModeValue('rgba(17, 17, 17, 0.18)', 'rgba(17, 17, 17, 0.25)');
   const thumbnailBg = useColorModeValue('rgba(255, 245, 235, 0.5)', 'rgba(30, 34, 50, 0.9)');
   const paperBg = useColorModeValue('white', '#ffffff');
   const toolbarBg = useColorModeValue('rgba(255, 248, 240, 0.9)', 'rgba(12,16,35,0.95)');
@@ -196,7 +196,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     : 'gray.200';
   const focusShadow = focusBadgeVisible
     ? highlightSource === 'voice'
-      ? '0 0 20px rgba(121,95,238,0.35), 0 4px 20px rgba(0,0,0,0.2)'
+      ? '0 0 20px rgba(17, 17, 17,0.35), 0 4px 20px rgba(0,0,0,0.2)'
       : '0 0 20px rgba(56,189,248,0.25), 0 4px 20px rgba(0,0,0,0.2)'
     : '0 4px 20px rgba(0,0,0,0.15), 0 1px 4px rgba(0,0,0,0.1)';
 
@@ -623,7 +623,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             css={{
               '&::-webkit-scrollbar': { width: '6px' },
               '&::-webkit-scrollbar-thumb': {
-                background: 'rgba(121,95,238,0.4)',
+                background: 'rgba(17, 17, 17,0.4)',
                 borderRadius: '10px',
               },
             }}
@@ -684,11 +684,11 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             '&::-webkit-scrollbar': { width: '8px', height: '8px' },
             '&::-webkit-scrollbar-track': { background: 'transparent' },
             '&::-webkit-scrollbar-thumb': {
-              background: 'rgba(121,95,238,0.4)',
+              background: 'rgba(17, 17, 17,0.4)',
               borderRadius: '10px',
             },
             '&::-webkit-scrollbar-thumb:hover': {
-              background: 'rgba(121,95,238,0.6)',
+              background: 'rgba(17, 17, 17,0.6)',
             },
           }}
         >
@@ -716,7 +716,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     transition="all 0.3s"
                     _hover={{
                       transform: 'translateY(-4px)',
-                      boxShadow: '0 8px 24px rgba(121,95,238,0.3)',
+                      boxShadow: '0 8px 24px rgba(17, 17, 17,0.3)',
                       borderColor: 'brand.400',
                     }}
                     cursor="pointer"

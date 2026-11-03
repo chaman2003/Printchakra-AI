@@ -169,13 +169,13 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
 
   // Consistent styling with SurfaceCard
   const bgCard = useColorModeValue('rgba(255, 248, 240, 0.95)', 'rgba(12, 16, 35, 0.92)');
-  const borderColor = useColorModeValue('rgba(121, 95, 238, 0.08)', 'rgba(255, 255, 255, 0.08)');
+  const borderColor = useColorModeValue('rgba(17, 17, 17, 0.08)', 'rgba(255, 255, 255, 0.08)');
   const shadow = useColorModeValue(
-    '0 20px 35px rgba(121, 95, 238, 0.08)',
+    '0 20px 35px rgba(17, 17, 17, 0.08)',
     '0 25px 50px rgba(0, 0, 0, 0.8)'
   );
   const textMuted = useColorModeValue('gray.600', 'gray.400');
-  const tagBg = useColorModeValue('gray.100', 'rgba(121, 95, 238, 0.15)');
+  const tagBg = useColorModeValue('gray.100', 'rgba(17, 17, 17, 0.15)');
 
   const fetchSystemInfo = useCallback(async () => {
     setLoading(true);
@@ -378,7 +378,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
           size="sm"
           leftIcon={<Iconify icon={FiMonitor} />}
           color={textMuted}
-          _hover={{ color: 'brand.400', bg: 'rgba(121, 95, 238, 0.1)' }}
+          _hover={{ color: 'brand.400', bg: 'rgba(17, 17, 17, 0.1)' }}
           fontWeight="medium"
           onClick={onOpen}
         >
@@ -440,7 +440,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                   size="sm"
                   variant="ghost"
                   color={textMuted}
-                  _hover={{ color: 'brand.400', bg: 'rgba(121, 95, 238, 0.1)' }}
+                  _hover={{ color: 'brand.400', bg: 'rgba(17, 17, 17, 0.1)' }}
                   onClick={refreshSystemStatus}
                   isLoading={loading}
                 />
@@ -462,7 +462,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
               <VStack align="stretch" spacing={6} w="100%">
                 {/* Printers Section */}
                 <Box
-                  bg={useColorModeValue('gray.50', 'rgba(121, 95, 238, 0.05)')}
+                  bg={useColorModeValue('gray.50', 'rgba(17, 17, 17, 0.05)')}
                   borderRadius="xl"
                   p={5}
                   border="1px solid"
@@ -519,7 +519,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                               borderColor={defaultPrinter === printer.name ? 'brand.400' : borderColor}
                               cursor="pointer"
                               transition="all 0.2s"
-                              _hover={{ borderColor: 'brand.400', boxShadow: `0 0 0 2px rgba(121, 95, 238, 0.1)` }}
+                              _hover={{ borderColor: 'brand.400', boxShadow: `0 0 0 2px rgba(17, 17, 17, 0.1)` }}
                               onClick={() => {
                                 if (!settingDefault && defaultPrinter !== printer.name) {
                                   handleSetDefaultPrinter(printer.name);
@@ -668,7 +668,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                               borderRadius="lg"
                               border="1px solid"
                               borderColor={borderColor}
-                              _hover={{ bg: 'rgba(121, 95, 238, 0.1)', borderColor: 'brand.400', transform: 'translateY(-2px)' }}
+                              _hover={{ bg: 'rgba(17, 17, 17, 0.1)', borderColor: 'brand.400', transform: 'translateY(-2px)' }}
                               transition="all 0.2s"
                               boxShadow="sm"
                             >
@@ -831,7 +831,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                     {/* Left Column */}
                     <VStack align="stretch" spacing={4}>
                       {/* OS */}
-                      <Flex justify="space-between" align="center" bg={useColorModeValue('gray.50', 'rgba(121, 95, 238, 0.05)')} p={3} borderRadius="lg">
+                      <Flex justify="space-between" align="center" bg={useColorModeValue('gray.50', 'rgba(17, 17, 17, 0.05)')} p={3} borderRadius="lg">
                         <Text fontSize="sm" color={textMuted} fontWeight="600">
                           OS
                         </Text>
@@ -841,7 +841,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                       </Flex>
 
                       {/* CPU */}
-                      <Flex justify="space-between" align="center" bg={useColorModeValue('gray.50', 'rgba(121, 95, 238, 0.05)')} p={3} borderRadius="lg">
+                      <Flex justify="space-between" align="center" bg={useColorModeValue('gray.50', 'rgba(17, 17, 17, 0.05)')} p={3} borderRadius="lg">
                         <Text fontSize="sm" color={textMuted} fontWeight="600">
                           CPU
                         </Text>
@@ -859,7 +859,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                     {/* Right Column */}
                     <VStack align="stretch" spacing={4}>
                       {/* Memory */}
-                      <Box bg={useColorModeValue('gray.50', 'rgba(121, 95, 238, 0.05)')} p={3} borderRadius="lg">
+                      <Box bg={useColorModeValue('gray.50', 'rgba(17, 17, 17, 0.05)')} p={3} borderRadius="lg">
                         <Flex justify="space-between" align="center" mb={2}>
                           <Text fontSize="sm" color={textMuted} fontWeight="600">
                             Memory
@@ -878,7 +878,7 @@ export const DeviceInfoPanel: React.FC<DeviceInfoPanelProps> = ({
                       </Box>
 
                       {/* GPU */}
-                      <Box bg={useColorModeValue('gray.50', 'rgba(121, 95, 238, 0.05)')} p={3} borderRadius="lg">
+                      <Box bg={useColorModeValue('gray.50', 'rgba(17, 17, 17, 0.05)')} p={3} borderRadius="lg">
                         <Flex justify="space-between" align="center">
                           <Text fontSize="sm" color={textMuted} fontWeight="600">
                             GPU

@@ -12,6 +12,7 @@ import apiClient from '../apiClient';
 import { API_BASE_URL, API_ENDPOINTS, getImageUrl } from '../config';
 import { FileInfo, OCRResult } from '../types';
 import { runOCR } from '../ocrApi';
+import { withToken } from '../auth/session';
 import PageShell from '../components/layout/PageShell';
 import { Iconify } from '../components/common';
 
@@ -340,7 +341,7 @@ const Playground: React.FC = () => {
                                 <Tooltip label="Download">
                                   <IconButton
                                     aria-label="Download" icon={<Iconify icon={FiDownload} boxSize={3} />} size="xs" variant="ghost"
-                                    onClick={() => window.open(`${API_BASE_URL}/document/files/${filename}/download`, '_blank')}
+                                    onClick={() => window.open(withToken(`${API_BASE_URL}/document/files/${filename}/download`), '_blank')}
                                   />
                                 </Tooltip>
                                 <Tooltip label="Delete">

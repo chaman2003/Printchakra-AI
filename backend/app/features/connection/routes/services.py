@@ -8,8 +8,36 @@ import logging
 from flask import jsonify, request
 from app.features.connection.routes import connection_bp
 from app.core.middleware.cors import create_options_response
+from app.core.paths import IS_CLOUD, app_data_dir
 
 logger = logging.getLogger(__name__)
+
+
+def _cloud_services() -> dict:
+    """Service report for the serverless deployment (Gemini + Postgres instead of local engines)."""
+    import os
+    from app.core import cloud
+
+    gemini_ready = bool(os.environ.get("GEMINI_API_KEY"))
+    store_ready = cloud.enabled()
+    return {
+        "api": {"name": "API Server", "status": "running", "healthy": True},
+        "ocr": {
+            "name": "OCR (Gemini)",
+            "status": "available" if gemini_ready else "not_configured",
+            "healthy": gemini_ready,
+        },
+        "voice": {
+            "name": "Voice AI (Gemini Live)",
+            "status": "available" if gemini_ready else "not_configured",
+            "healthy": gemini_ready,
+        },
+        "storage": {
+            "name": "File Storage (Postgres)",
+            "status": "available" if store_ready else "not_configured",
+            "healthy": store_ready,
+        },
+    }
 
 
 @connection_bp.route("/services/status", methods=["GET", "OPTIONS"])
@@ -19,6 +47,14 @@ def get_services_status():
         return create_options_response()
     
     try:
+        if IS_CLOUD:
+            cloud_services = _cloud_services()
+            return jsonify({
+                "success": True,
+                "services": cloud_services,
+                "overall_health": "healthy" if all(s["healthy"] for s in cloud_services.values()) else "degraded",
+            })
+
         services = {}
         
         # Check Flask/API status
@@ -111,6 +147,12 @@ def check_ollama_status():
     if request.method == "OPTIONS":
         return create_options_response()
     
+    if IS_CLOUD:
+        return jsonify({
+            "success": True,
+            "ollama": {"running": False, "error": "Not used in the cloud deployment (Gemini is the model provider)"},
+        })
+
     try:
         import requests
         
@@ -176,10 +218,7 @@ def validate_all_services():
         
         # Validate storage directories
         import os
-        data_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "data"
-        )
+        data_dir = app_data_dir()
         
         for folder in ["uploads", "pdfs", "processed", "converted"]:
             folder_path = os.path.join(data_dir, folder)
@@ -192,21 +231,30 @@ def validate_all_services():
             })
         
         # Validate OCR
-        try:
-            from paddleocr import PaddleOCR
+        if IS_CLOUD:
+            has_key = bool(os.environ.get("GEMINI_API_KEY"))
             validations.append({
                 "service": "OCR",
-                "check": "paddleocr_import",
-                "passed": True,
-                "message": "PaddleOCR is available"
+                "check": "gemini_key",
+                "passed": has_key,
+                "message": "Gemini OCR is configured" if has_key else "GEMINI_API_KEY is not set"
             })
-        except ImportError:
-            validations.append({
-                "service": "OCR",
-                "check": "paddleocr_import",
-                "passed": False,
-                "message": "PaddleOCR not installed"
-            })
+        else:
+            try:
+                from paddleocr import PaddleOCR
+                validations.append({
+                    "service": "OCR",
+                    "check": "paddleocr_import",
+                    "passed": True,
+                    "message": "PaddleOCR is available"
+                })
+            except ImportError:
+                validations.append({
+                    "service": "OCR",
+                    "check": "paddleocr_import",
+                    "passed": False,
+                    "message": "PaddleOCR not installed"
+                })
         
         # Validate PIL/Pillow
         try:

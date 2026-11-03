@@ -5,6 +5,7 @@ Image quality and enhancement endpoints.
 """
 
 import os
+from app.core.paths import app_data_dir
 import logging
 from flask import jsonify, request, send_file
 from app.features.phone.routes import phone_bp
@@ -12,7 +13,7 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "uploads")
+UPLOAD_FOLDER = os.path.join(app_data_dir(), "uploads")
 
 
 @phone_bp.route("/quality/check", methods=["POST", "OPTIONS"])

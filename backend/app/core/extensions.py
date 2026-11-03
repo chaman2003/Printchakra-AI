@@ -7,7 +7,6 @@ Initialize and configure Flask extensions.
 import logging
 from flask import Flask
 from flask_cors import CORS
-from flask_socketio import SocketIO
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +47,7 @@ def init_cors(app: Flask) -> CORS:
     return cors
 
 
-def init_socketio(app: Flask, socketio: SocketIO) -> SocketIO:
+def init_socketio(app: Flask, socketio: "SocketIO") -> "SocketIO":
     """
     Initialize Socket.IO for the Flask application.
     

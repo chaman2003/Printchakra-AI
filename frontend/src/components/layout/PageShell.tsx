@@ -11,7 +11,7 @@ interface PageShellProps extends BoxProps {
 
 const PageShell: React.FC<PageShellProps> = ({ children, commands, ...rest }) => {
   const background = useColorModeValue(
-    'linear-gradient(135deg, #f8f9ff 0%, #f0f2ff 50%, #e8ecff 100%)',
+    'linear-gradient(135deg, #f2f2f2 0%, #f2f2f2 50%, #ececec 100%)',
     'linear-gradient(180deg, #080c18 0%, #0a0f1c 100%)'
   );
 

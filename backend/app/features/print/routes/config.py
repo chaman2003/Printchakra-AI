@@ -8,6 +8,7 @@ import logging
 from flask import jsonify, request
 from app.features.print.routes import print_bp
 from app.core.middleware.cors import create_options_response
+from app.core.paths import IS_CLOUD
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,10 @@ def set_default_printer():
             return jsonify({"success": False, "error": "No printer name provided"}), 400
         
         printer_name = data.get("printer")
+
+        if IS_CLOUD:
+            # The browser print dialog lets the user pick the real printer; there is nothing to set here.
+            return jsonify({"success": True, "message": "Printing uses the browser print dialog"})
         
         from app.features.print.services.printer_service import PrinterService
         

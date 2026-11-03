@@ -10,6 +10,8 @@ import subprocess
 import logging
 from typing import List, Dict, Any, Optional
 
+from app.core.paths import IS_CLOUD
+
 from .queue_discovery_mixin import PrinterQueueDiscoveryMixin
 
 logger = logging.getLogger(__name__)
@@ -117,6 +119,8 @@ class PrinterService(PrinterQueueDiscoveryMixin):
     
     def get_default_printer(self) -> Optional[str]:
         """Get the default printer name."""
+        if IS_CLOUD:
+            return "Browser Print"
         if sys.platform.startswith("win"):
             try:
                 import win32print
@@ -221,6 +225,8 @@ class PrinterService(PrinterQueueDiscoveryMixin):
         Returns:
             List of printer info dictionaries
         """
+        if IS_CLOUD:
+            return [{"name": "Browser Print", "status": "Ready", "isDefault": True}]
         queues = self.get_printer_queues()
         return [
             {

@@ -11,12 +11,20 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-import pytesseract
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.preprocessing import StandardScaler
+
+# Optional: not installed on serverless hosting (OCR runs through Gemini there, see gemini_ocr.py).
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
+try:
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.preprocessing import StandardScaler
+except ImportError:
+    KNeighborsClassifier = StandardScaler = None
 
 _tesseract_cmd = os.environ.get("TESSERACT_CMD")
-if _tesseract_cmd:
+if _tesseract_cmd and pytesseract is not None:
     pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd
 
 # Import PaddleOCR components

@@ -1,3 +1,4 @@
+import { withToken } from './auth/session';
 // Backend API Configuration
 // Automatically detects and routes to the correct backend:
 // - Local development: localhost:5000
@@ -37,6 +38,11 @@ const getApiBaseUrl = () => {
 };
 
 export const API_BASE_URL = getApiBaseUrl();
+
+// 'poll' = realtime events over HTTP polling (serverless hosting such as Vercel).
+// Anything else = Socket.IO (local development against the Flask server).
+export const REALTIME_MODE: 'poll' | 'socketio' =
+  process.env.REACT_APP_REALTIME === 'poll' ? 'poll' : 'socketio';
 
 // Determine environment type for logging/debugging
 export const ENVIRONMENT = (() => {
@@ -88,7 +94,7 @@ export const getImageUrl = (endpoint: string, filename: string) => {
 
   // Add timestamp to bypass cache
   const separator = fullUrl.includes('?') ? '&' : '?';
-  return `${fullUrl}${separator}_t=${Date.now()}`;
+  return withToken(`${fullUrl}${separator}_t=${Date.now()}`);
 };
 
 // Socket.IO specific configuration - handles both local and deployed

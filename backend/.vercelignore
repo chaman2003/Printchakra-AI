@@ -1,0 +1,16 @@
+# Files that must not be uploaded to Vercel.
+# app.py clashes with the app/ package; Vercel uses index.py instead.
+app.py
+Dockerfile
+.dockerignore
+requirements-local.txt
+.env
+.env.*
+.venv
+venv
+certs
+logs
+app/data
+app/print_scripts/*.pdf
+**/__pycache__
+**/*.pyc

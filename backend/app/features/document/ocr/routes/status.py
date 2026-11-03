@@ -26,6 +26,12 @@ def get_ocr_status():
             "ollama_available": False
         }
         
+        # Gemini (cloud) takes priority over local PaddleOCR
+        from app.modules.ocr.gemini_ocr import is_available as gemini_available
+        if gemini_available():
+            status.update({"available": True, "engine": "Gemini", "languages": ["en", "hi", "kn", "te", "ta", "mr", "bn", "gu"]})
+            return jsonify({"success": True, "status": status})
+        
         # Check PaddleOCR
         try:
             from paddleocr import PaddleOCR

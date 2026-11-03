@@ -14,9 +14,24 @@ __version__ = "2.1.0"
 __author__ = "Chaman S"
 
 # Import from submodules
-from .api_endpoints import create_enhanced_endpoints
-from .ocr import OCRModule, AIEnhancer, DocumentClassifier
-from .voice import VoiceAIOrchestrator, WhisperTranscriptionService, VoiceChatService
+# Heavy or machine-specific modules are optional: serverless hosting has no Tesseract, scikit-learn,
+# Whisper or GPU, and OCR/voice run through Gemini there instead.
+from app.core.paths import IS_CLOUD
+
+try:
+    from .api_endpoints import create_enhanced_endpoints
+except ImportError:
+    create_enhanced_endpoints = None
+
+try:
+    from .ocr import OCRModule, AIEnhancer, DocumentClassifier
+except ImportError:
+    OCRModule = AIEnhancer = DocumentClassifier = None
+
+if IS_CLOUD:
+    VoiceAIOrchestrator = WhisperTranscriptionService = VoiceChatService = None
+else:
+    from .voice import VoiceAIOrchestrator, WhisperTranscriptionService, VoiceChatService
 from .image import ImageProcessingModule, ImageEnhancer
 from .document import (
     DocumentDetector,

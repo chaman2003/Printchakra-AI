@@ -81,7 +81,7 @@ export const DashboardActionPanel: React.FC<DashboardActionPanelProps> = ({
           fontSize="13px"
           h="38px"
           px={5}
-          _hover={{ transform: 'translateY(-1px)', boxShadow: '0 6px 20px rgba(121,95,238,0.5)' }}
+          _hover={{ transform: 'translateY(-1px)', boxShadow: '0 6px 20px rgba(17, 17, 17,0.5)' }}
           transition="all 0.2s ease"
           w={{ base: '100%', md: 'auto' }}
         >
@@ -203,7 +203,7 @@ export const DashboardActionPanel: React.FC<DashboardActionPanelProps> = ({
               h="38px"
               px={4}
               w={{ base: '100%', md: 'auto' }}
-              boxShadow="0 4px 12px rgba(121,95,238,0.3)"
+              boxShadow="0 4px 12px rgba(17, 17, 17,0.3)"
             >
               Convert {selectedFilesCount} Selected
             </Button>

@@ -46,8 +46,8 @@ const FancySelect: React.FC<FancySelectProps> = ({
 }) => {
   const [isCustom, setIsCustom] = useState(false);
   const hoverBg = useColorModeValue('brand.50', 'whiteAlpha.100');
-  const selectedBg = useColorModeValue('brand.100', 'rgba(121,95,238,0.2)');
-  const borderColor = useColorModeValue('brand.200', 'rgba(121,95,238,0.3)');
+  const selectedBg = useColorModeValue('brand.100', 'rgba(17, 17, 17,0.2)');
+  const borderColor = useColorModeValue('brand.200', 'rgba(17, 17, 17,0.3)');
   const menuBg = useColorModeValue('white', 'rgba(12, 16, 35, 0.95)');
   const buttonBg = useColorModeValue('white', 'rgba(20, 24, 45, 0.6)');
 

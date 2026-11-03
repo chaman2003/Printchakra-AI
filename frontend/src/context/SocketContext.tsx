@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { API_BASE_URL, SOCKET_CONFIG, SOCKET_IO_ENABLED, ENVIRONMENT } from '../config';
+import { API_BASE_URL, SOCKET_CONFIG, SOCKET_IO_ENABLED, ENVIRONMENT, REALTIME_MODE, getDefaultHeaders } from '../config';
+import { PollingSocket } from './pollingSocket';
+import { useAuth } from '../auth/AuthContext';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -27,13 +29,30 @@ interface SocketProviderProps {
 }
 
 export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
+  const { user } = useAuth();
   const [connected, setConnected] = useState(false);
+  const [, forceRender] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const connectionAttemptRef = useRef(0);
   const maxRetries = 10;
   const initializingRef = useRef(false);
 
   const initSocket = useCallback(() => {
+    // Serverless hosting has no websockets: events arrive by polling the backend over HTTP.
+    if (REALTIME_MODE === 'poll') {
+      let polling = (globalThis as any).__PRINTCHAKRA_SOCKET as unknown as PollingSocket | undefined;
+      if (!(polling instanceof PollingSocket)) {
+        polling = new PollingSocket(API_BASE_URL, getDefaultHeaders());
+        polling.on('connect', () => setConnected(true));
+        polling.on('disconnect', () => setConnected(false));
+        (globalThis as any).__PRINTCHAKRA_SOCKET = polling;
+      }
+      socketRef.current = polling as unknown as Socket;
+      polling.connect();
+      forceRender((n) => n + 1);
+      return;
+    }
+
     if (!SOCKET_IO_ENABLED) {
       console.log('[Socket] Socket.IO disabled - using HTTP polling only');
       setConnected(true);
@@ -169,13 +188,19 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
   }, [initSocket]);
 
   useEffect(() => {
-    initSocket();
+    // Realtime only runs for a logged-in user; the API rejects everyone else.
+    if (user) {
+      initSocket();
+    } else if (REALTIME_MODE === 'poll') {
+      const existing = (globalThis as any).__PRINTCHAKRA_SOCKET;
+      if (existing instanceof PollingSocket) existing.disconnect();
+    }
 
     // Cleanup: Only disconnect on actual unmount, not on React StrictMode remount
     return () => {
       // Don't disconnect - keep the connection alive for reuse
     };
-  }, [initSocket]);
+  }, [initSocket, user]);
 
   // Periodic connection check - if disconnected, try to reconnect
   useEffect(() => {

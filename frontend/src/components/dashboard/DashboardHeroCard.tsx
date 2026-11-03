@@ -46,7 +46,7 @@ export const DashboardHeroCard: React.FC<DashboardHeroCardProps> = ({
   onCheckConnectivity,
   children,
 }) => {
-  const dividerColor = useColorModeValue('rgba(0,0,0,0.06)', 'rgba(69, 202, 255, 0.08)');
+  const dividerColor = useColorModeValue('rgba(0,0,0,0.06)', 'rgba(17, 17, 17, 0.08)');
   const isConnected = statusDotColor === 'green.400';
   const pulseAnimation = isConnected ? `${pulseGreen} 2s ease-in-out infinite` : `${pulseRed} 1.5s ease-in-out infinite`;
 
@@ -80,7 +80,7 @@ export const DashboardHeroCard: React.FC<DashboardHeroCardProps> = ({
               h={12}
               borderRadius="xl"
               bgGradient="linear(to-br, brand.400, nebula.500)"
-              boxShadow="0 4px 12px rgba(121,95,238,0.3)"
+              boxShadow="0 4px 12px rgba(17, 17, 17,0.3)"
               align="center"
               justify="center"
               flexShrink={0}

@@ -5,6 +5,7 @@ Service for system-related operations including printer management.
 """
 
 import os
+from app.core.paths import IS_CLOUD, app_data_dir
 import platform
 import shutil
 import subprocess
@@ -25,7 +26,7 @@ class SystemService:
             Dictionary containing system details
         """
         return {
-            "platform": platform.system(),
+            "platform": "Vercel (cloud)" if IS_CLOUD else platform.system(),
             "platform_release": platform.release(),
             "platform_version": platform.version(),
             "architecture": platform.machine(),
@@ -42,6 +43,8 @@ class SystemService:
         Returns:
             List of printer information dictionaries
         """
+        if IS_CLOUD:
+            return [{"name": "Browser Print", "status": "idle", "isDefault": True}]
         system = platform.system()
         printers = []
         
@@ -164,6 +167,8 @@ class SystemService:
         Returns:
             Default printer name or None
         """
+        if IS_CLOUD:
+            return "Browser Print"
         system = platform.system()
         
         try:
@@ -239,6 +244,12 @@ class SystemService:
         Returns:
             GPU info dictionary
         """
+        if IS_CLOUD:
+            return {
+                "available": False, "cuda_available": False, "device_count": 0, "devices": [],
+                "memory_total": 0, "memory_used": 0, "memory_free": 0,
+                "error": "No GPU on serverless hosting (OCR and voice run on Gemini)",
+            }
         gpu_info = {
             "available": False,
             "cuda_available": False,
@@ -292,6 +303,14 @@ class SystemService:
         Returns:
             Services status dictionary
         """
+        if IS_CLOUD:
+            import os
+
+            return {
+                "ollama": {"status": "not used", "available": False},
+                "paddle_ocr": {"status": "replaced by Gemini", "available": bool(os.environ.get("GEMINI_API_KEY"))},
+                "print_spooler": {"status": "browser printing", "available": False},
+            }
         services = {
             "ollama": {"status": "unknown", "available": False},
             "paddle_ocr": {"status": "unknown", "available": False},
@@ -369,7 +388,7 @@ class SystemService:
             storage["percent_used"] = round((used / total) * 100, 2) if total > 0 else 0
             
             # Check data directories if they exist
-            data_base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data")
+            data_base = app_data_dir()
             
             if os.path.exists(data_base):
                 for folder in ["uploads", "processed", "converted", "pdfs"]:

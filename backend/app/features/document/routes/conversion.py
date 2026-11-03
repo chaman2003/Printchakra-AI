@@ -5,6 +5,7 @@ Document format conversion endpoints.
 """
 
 import os
+from app.core.paths import app_data_dir
 import logging
 from flask import jsonify, request
 from werkzeug.utils import secure_filename
@@ -14,7 +15,7 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data")
+DATA_DIR = app_data_dir()
 CONVERTED_DIR = os.path.join(DATA_DIR, "converted")
 
 

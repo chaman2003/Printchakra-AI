@@ -75,3 +75,5 @@ package-lock.json
 *.tmp
 *.temp
 temp/
+.vercel
+.env*

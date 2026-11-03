@@ -179,13 +179,13 @@ const VoiceAIChat: React.FC<VoiceAIChatProps> = ({
 
   // Color mode values - Updated to match SurfaceCard theme
   const bgColor = useColorModeValue('rgba(255, 248, 240, 0.95)', 'rgba(12, 16, 35, 0.92)');
-  const borderColor = useColorModeValue('rgba(121, 95, 238, 0.18)', 'rgba(69, 202, 255, 0.25)');
-  const userMessageBg = useColorModeValue('brand.50', 'rgba(121, 95, 238, 0.15)');
+  const borderColor = useColorModeValue('rgba(17, 17, 17, 0.18)', 'rgba(17, 17, 17, 0.25)');
+  const userMessageBg = useColorModeValue('brand.50', 'rgba(17, 17, 17, 0.15)');
   const aiMessageBg = useColorModeValue('orange.50', 'rgba(255, 255, 255, 0.05)');
   const systemMessageBg = useColorModeValue('yellow.50', 'rgba(236, 201, 75, 0.1)');
   const chatBoxBg = useColorModeValue('orange.50', 'rgba(0, 0, 0, 0.2)');
   const shadow = useColorModeValue(
-    '0 20px 35px rgba(121, 95, 238, 0.08)',
+    '0 20px 35px rgba(17, 17, 17, 0.08)',
     '0 25px 50px rgba(0, 0, 0, 0.8)'
   );
 

@@ -1,0 +1,17 @@
+# Used when deploying the frontend with the Vercel CLI from the repo root
+# (the "printchakra" project has Root Directory = frontend). Keep uploads small.
+backend
+phase-2
+pipecat-web-voice
+*.bin
+*.ipynb
+*.png
+*.mp4
+*.docx
+*.pdf
+.git
+node_modules
+frontend/node_modules
+frontend/build
+frontend/.env.local
+!frontend/public/*.png

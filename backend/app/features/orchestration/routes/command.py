@@ -4,20 +4,72 @@ PrintChakra Backend - Orchestration Command Routes
 Voice and text command execution endpoints.
 """
 
+import json
 import logging
 import os
-from flask import jsonify, request, current_app
+from flask import jsonify, request, g
 from app.features.orchestration.routes import orchestration_bp
+from app.core.config import get_data_dirs
 from app.core.middleware.cors import create_options_response
+from app.core.paths import IS_CLOUD
 from app.modules.orchestration import get_orchestrator
 
 logger = logging.getLogger(__name__)
 
+# Fields that make up the orchestrator's workflow state.
+_STATE_FIELDS = ("current_state", "pending_action", "selected_document", "configuration", "workflow_history")
+
+
+def _state_file() -> str:
+    return os.path.join(get_data_dirs()["DATA_DIR"], "state", "orchestrator.json")
+
+
+def _load_state(orchestrator) -> None:
+    """Restore workflow state saved by an earlier request, possibly on another serverless instance."""
+    from app.modules.orchestration.core_service import WorkflowState
+
+    try:
+        with open(_state_file(), "r", encoding="utf-8") as handle:
+            saved = json.load(handle)
+    except (OSError, ValueError):
+        return
+    try:
+        orchestrator.current_state = WorkflowState(saved.get("current_state", "idle"))
+    except ValueError:
+        orchestrator.current_state = WorkflowState.IDLE
+    for field in _STATE_FIELDS[1:]:
+        if field in saved:
+            setattr(orchestrator, field, saved[field])
+
+
+def _save_state(orchestrator) -> None:
+    state = {field: getattr(orchestrator, field, None) for field in _STATE_FIELDS}
+    state["current_state"] = getattr(state["current_state"], "value", "idle")
+    path = _state_file()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(state, handle, default=str)
+
 
 def _get_orchestrator():
     """Get shared orchestrator instance."""
-    data_dir = os.path.join(current_app.root_path, "data")
-    return get_orchestrator(data_dir)
+    orchestrator = get_orchestrator(get_data_dirs()["DATA_DIR"])
+    if IS_CLOUD:
+        # Each request may land on a different instance, so state travels through the data directory.
+        _load_state(orchestrator)
+        g.orchestrator = orchestrator
+    return orchestrator
+
+
+@orchestration_bp.after_request
+def _persist_orchestrator_state(response):
+    orchestrator = g.pop("orchestrator", None)
+    if IS_CLOUD and orchestrator is not None:
+        try:
+            _save_state(orchestrator)
+        except OSError as exc:
+            logger.warning("Could not save orchestrator state: %s", exc)
+    return response
 
 
 def _normalize_command_text(command: str, parameters: dict) -> str:

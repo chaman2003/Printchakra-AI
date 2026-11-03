@@ -4,12 +4,23 @@ PrintChakra Backend - Core Package
 This module provides the Flask application factory and core configuration.
 """
 
+import os
+
 from flask import Flask
 from flask_cors import CORS
-from flask_socketio import SocketIO
+
+from app.core.paths import IS_CLOUD
 
 # Global extensions (initialized later)
-socketio = SocketIO()
+if IS_CLOUD:
+    # Serverless hosting has no websockets: events go through the database and clients poll for them.
+    from app.core.events import CloudSocketIO
+
+    socketio = CloudSocketIO()
+else:
+    from flask_socketio import SocketIO
+
+    socketio = SocketIO()
 cors = CORS()
 
 
@@ -29,6 +40,23 @@ def create_app(config_name: str = "development") -> Flask:
     from app.core.config import get_config
     app.config.from_object(get_config(config_name))
     
+    if IS_CLOUD or os.environ.get("REQUIRE_LOGIN") == "1":
+        # Registered before the cloud sync hooks so a request without a valid token never touches the database.
+        from app.features.auth import require_login
+
+        app.before_request(require_login)
+
+    if IS_CLOUD:
+        from app.core import cloud
+        from app.core.events import events_bp
+
+        app.register_blueprint(events_bp)
+        cloud.init_app(app)
+
+    from app.features.auth import auth_bp
+
+    app.register_blueprint(auth_bp)
+
     # Initialize extensions
     _init_extensions(app)
     
@@ -46,10 +74,18 @@ def create_app(config_name: str = "development") -> Flask:
 
 def _init_extensions(app: Flask) -> None:
     """Initialize Flask extensions."""
-    from app.core.extensions import init_cors, init_socketio
-    
+    from app.core.extensions import init_cors
+
     init_cors(app)
-    init_socketio(app, socketio)
+    if not IS_CLOUD:
+        from app.core.extensions import init_socketio
+
+        init_socketio(app, socketio)
+
+
+# Blueprints that need local hardware or local models and have no serverless equivalent.
+# Voice runs in the browser through Gemini Live, so the Whisper/Ollama/Pipecat routes stay off.
+_CLOUD_SKIPPED_BLUEPRINTS = {"voice", "pipecat"}
 
 
 def _register_blueprints(app: Flask) -> None:
@@ -67,6 +103,8 @@ def _register_blueprints(app: Flask) -> None:
     ]
 
     for feature_name, module_path, blueprint_name, prefix in blueprint_specs:
+        if IS_CLOUD and feature_name in _CLOUD_SKIPPED_BLUEPRINTS:
+            continue
         try:
             module = __import__(module_path, fromlist=[blueprint_name])
             blueprint = getattr(module, blueprint_name)
@@ -80,6 +118,8 @@ def _register_blueprints(app: Flask) -> None:
 
 def _register_socket_handlers() -> None:
     """Register Socket.IO event handlers."""
+    if IS_CLOUD:
+        return
     try:
         from app.sockets.handlers import register_handlers
         register_handlers(socketio)

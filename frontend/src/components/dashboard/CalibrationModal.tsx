@@ -151,9 +151,9 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({ isOpen, onCl
   }, [cancelCountdown, clearTestCaptures, isCountingDown, onClose, socket, testCaptures.length]);
 
   const bgCard = useColorModeValue('rgba(255, 248, 240, 0.95)', 'rgba(12, 16, 35, 0.92)');
-  const borderColor = useColorModeValue('rgba(121, 95, 238, 0.08)', 'rgba(255, 255, 255, 0.08)');
+  const borderColor = useColorModeValue('rgba(17, 17, 17, 0.08)', 'rgba(255, 255, 255, 0.08)');
   const shadow = useColorModeValue(
-    '0 20px 35px rgba(121, 95, 238, 0.08)',
+    '0 20px 35px rgba(17, 17, 17, 0.08)',
     '0 25px 50px rgba(0, 0, 0, 0.8)'
   );
   const textMuted = useColorModeValue('gray.600', 'gray.400');
@@ -356,7 +356,7 @@ export const CalibrationModal: React.FC<CalibrationModalProps> = ({ isOpen, onCl
                 <VStack spacing={3}>
                   <Box
                     w="100%"
-                    bg={useColorModeValue('brand.50', 'rgba(121, 95, 238, 0.1)')}
+                    bg={useColorModeValue('brand.50', 'rgba(17, 17, 17, 0.1)')}
                     borderRadius="lg"
                     p={4}
                     textAlign="center"

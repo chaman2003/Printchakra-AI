@@ -117,7 +117,7 @@ const DocumentSelector = forwardRef<DocumentSelectorHandle, DocumentSelectorProp
     // Updated to match SurfaceCard theme - fully opaque for better visibility
     const bgColor = useColorModeValue('white', 'gray.900');
     const hoverBg = useColorModeValue('orange.50', 'whiteAlpha.100');
-    const selectedBg = useColorModeValue('brand.50', 'rgba(121,95,238,0.15)');
+    const selectedBg = useColorModeValue('brand.50', 'rgba(17, 17, 17,0.15)');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
 
     const handleDocumentClick = useCallback(

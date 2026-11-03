@@ -207,6 +207,17 @@ def extract_text_by_id(doc_id):
         
         # Perform OCR
         result = perform_ocr(document_path, language=language, use_ollama=use_ollama)
+
+        # Keep the result so later requests (and the file list's "has text" flag) do not re-run OCR.
+        if result.get("success") and isinstance(result.get("ocr_result"), dict):
+            try:
+                ocr_dir = get_data_dirs()["OCR_DATA_DIR"]
+                os.makedirs(ocr_dir, exist_ok=True)
+                json_path = os.path.join(ocr_dir, f"{os.path.splitext(filename)[0]}_ocr.json")
+                with open(json_path, "w", encoding="utf-8") as handle:
+                    json.dump(result["ocr_result"], handle, ensure_ascii=True)
+            except OSError as exc:
+                logger.warning(f"Could not save OCR result for {filename}: {exc}")
         
         return jsonify(_as_ocr_response(filename, result))
     
@@ -382,9 +393,77 @@ def _fallback_structured_units(raw_lines: list[str]) -> list[dict]:
     return units
 
 
+def _perform_gemini_ocr(path: str) -> dict:
+    """OCR an image or PDF through Gemini and return the same payload shape as the Paddle path."""
+    from concurrent.futures import ThreadPoolExecutor
+    from app.modules.ocr.gemini_ocr import ocr_image_bytes
+
+    started = time.time()
+    max_pages = int(os.environ.get("OCR_MAX_PAGES", "10"))
+
+    pages: list[bytes] = []
+    if os.path.splitext(path)[1].lower() == ".pdf":
+        import fitz
+
+        with fitz.open(path) as doc:
+            for index in range(min(len(doc), max_pages)):
+                pix = doc.load_page(index).get_pixmap(matrix=fitz.Matrix(2, 2))
+                pages.append(pix.tobytes("png"))
+    else:
+        with open(path, "rb") as handle:
+            pages.append(handle.read())
+
+    if not pages:
+        return {"success": False, "error": "Document has no pages"}
+
+    with ThreadPoolExecutor(max_workers=min(4, len(pages))) as pool:
+        results = list(pool.map(ocr_image_bytes, pages))
+
+    raw_results, units, texts = [], [], []
+    word_offset = 0
+    width = height = 0
+    for result in results:
+        raw_results.extend(result["raw_results"])
+        for unit in result["structured_units"]:
+            units.append({**unit, "word_indices": [i + word_offset for i in unit["word_indices"]]})
+        word_offset += result["word_count"]
+        if result["full_text"]:
+            texts.append(result["full_text"])
+        page_w, page_h = result["image_dimensions"]
+        width, height = max(width, page_w), max(height, page_h)
+
+    full_text = "\n\n".join(texts)
+    ocr_result = {
+        "raw_results": raw_results,
+        "structured_units": units,
+        "full_text": full_text,
+        "derived_title": next((r["derived_title"] for r in results if r["derived_title"]), ""),
+        "confidence_avg": results[0]["confidence_avg"] if raw_results else 0.0,
+        "word_count": word_offset,
+        "timestamp": "",
+        "processing_time_ms": (time.time() - started) * 1000,
+        "image_dimensions": [width, height],
+        "engine": "gemini",
+    }
+    return {
+        "success": True,
+        "text": full_text,
+        "raw_text": full_text,
+        "character_count": len(full_text),
+        "line_count": len(full_text.split("\n")),
+        "ocr_result": ocr_result,
+        "llm": {"used": True, "success": True, "error": None, "model": os.environ.get("OCR_MODEL", "gemini")},
+    }
+
+
 def perform_ocr(image_path: str, language: str = "en", use_ollama: bool = True) -> dict:
     """Perform OCR and always post-process into structured JSON."""
     try:
+        from app.modules.ocr.gemini_ocr import is_available as gemini_available
+
+        if gemini_available():
+            return _perform_gemini_ocr(image_path)
+
         from app.modules.ocr.paddle_ocr import get_ocr_processor
 
         started = time.time()

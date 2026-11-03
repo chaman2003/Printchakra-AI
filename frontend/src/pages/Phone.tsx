@@ -22,6 +22,7 @@ import {
 } from '@chakra-ui/react';
 import { FiCamera, FiEye, FiEyeOff, FiMaximize2, FiMinimize2, FiUpload, FiWifi } from 'react-icons/fi';
 import { API_ENDPOINTS } from '../config';
+import { shrinkForUpload } from '../utils/imageUpload';
 import { Iconify, ConnectionValidator } from '../components/common';
 
 const Phone: React.FC = () => {
@@ -155,8 +156,9 @@ const Phone: React.FC = () => {
       setIsProcessingQueue(true);
       const item = uploadQueue[0];
       try {
+        const { blob, filename } = await shrinkForUpload(item.blob, item.filename);
         const formData = new FormData();
-        formData.append('file', item.blob, item.filename);
+        formData.append('file', blob, filename);
         await apiClient.post(API_ENDPOINTS.upload, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -219,7 +221,7 @@ const Phone: React.FC = () => {
             Capture documents and send them to the Dashboard for processing.
           </Text>
         </Stack>
-        <Flex align="center" gap={3} bg="surface.blur" borderRadius="full" border="1px solid rgba(121,95,238,0.22)" px={5} py={2}>
+        <Flex align="center" gap={3} bg="surface.blur" borderRadius="full" border="1px solid rgba(17, 17, 17,0.22)" px={5} py={2}>
           <Box w={3} h={3} borderRadius="full" bg={connected ? 'green.400' : 'red.400'} />
           <Text fontWeight="600" color={muted} display="flex" alignItems="center" gap={2}>
             <Iconify icon={FiWifi} boxSize={5} />
@@ -236,13 +238,13 @@ const Phone: React.FC = () => {
       </Flex>
 
       {message && (
-        <Alert status="info" borderRadius="xl" bg="rgba(69,202,255,0.1)" border="1px solid rgba(69,202,255,0.25)">
+        <Alert status="info" borderRadius="xl" bg="rgba(17, 17, 17,0.1)" border="1px solid rgba(17, 17, 17,0.25)">
           <AlertIcon />
           <AlertDescription>{message}</AlertDescription>
         </Alert>
       )}
 
-      <Card bg={panelBg} border="1px solid rgba(121,95,238,0.18)" boxShadow="subtle">
+      <Card bg={panelBg} border="1px solid rgba(17, 17, 17,0.18)" boxShadow="subtle">
         <CardBody>
           <Stack spacing={6}>
             <ButtonGroup isAttached variant="ghost" alignSelf="center">
@@ -301,7 +303,7 @@ const Phone: React.FC = () => {
             {previewImage && (
               <Stack spacing={3}>
                 <Heading size="sm">Preview</Heading>
-                <Box borderRadius="2xl" overflow="hidden" border="1px solid rgba(69,202,255,0.25)" boxShadow="subtle">
+                <Box borderRadius="2xl" overflow="hidden" border="1px solid rgba(17, 17, 17,0.25)" boxShadow="subtle">
                   <img src={previewImage} alt="Preview" style={{ width: '100%', display: 'block' }} />
                 </Box>
               </Stack>

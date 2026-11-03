@@ -55,7 +55,7 @@ input, button, textarea, select {
 
 /* Focus visible for keyboard navigation */
 *:focus-visible {
-  outline: 2px solid rgba(121, 95, 238, 0.6);
+  outline: 2px solid rgba(17, 17, 17, 0.6);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -79,23 +79,23 @@ input, button, textarea, select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(121, 95, 238, 0.2);
+  background: rgba(17, 17, 17, 0.2);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(121, 95, 238, 0.4);
+  background: rgba(17, 17, 17, 0.4);
 }
 
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(121, 95, 238, 0.2) transparent;
+  scrollbar-color: rgba(17, 17, 17, 0.2) transparent;
 }
 
 /* Selection colors */
 ::selection {
-  background: rgba(121, 95, 238, 0.2);
+  background: rgba(17, 17, 17, 0.2);
   color: inherit;
 }
 
@@ -155,7 +155,7 @@ a:active, button:active, [role="button"]:active {
 
 .chakra-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 20px -10px rgba(121, 95, 238, 0.3) !important;
+  box-shadow: 0 12px 20px -10px rgba(17, 17, 17, 0.3) !important;
 }
 
 /* Utility classes for "enabling" stuffs */

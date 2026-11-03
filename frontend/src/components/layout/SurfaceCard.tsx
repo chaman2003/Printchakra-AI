@@ -17,7 +17,7 @@ const SurfaceCard = React.forwardRef<HTMLDivElement, SurfaceCardProps>((props, r
     'rgba(255, 255, 255, 0.06)'
   );
   const shadow = useColorModeValue(
-    '0 1px 3px rgba(0, 0, 0, 0.04), 0 6px 24px rgba(121, 95, 238, 0.06)',
+    '0 1px 3px rgba(0, 0, 0, 0.04), 0 6px 24px rgba(17, 17, 17, 0.06)',
     '0 1px 3px rgba(0, 0, 0, 0.3), 0 6px 24px rgba(0, 0, 0, 0.2)'
   );
 

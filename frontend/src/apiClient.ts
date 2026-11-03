@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL, getDefaultHeaders } from './config';
+import { authHeader, notifyExpired } from './auth/session';
 
 // Create axios instance with default configuration
 const apiClient = axios.create({
@@ -12,7 +13,7 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   config => {
     // Merge with default headers
-    const defaultHeaders = getDefaultHeaders();
+    const defaultHeaders = { ...getDefaultHeaders(), ...authHeader() };
 
     // Safely merge headers
     Object.keys(defaultHeaders).forEach(key => {
@@ -39,6 +40,11 @@ apiClient.interceptors.response.use(
     return response;
   },
   error => {
+    // A rejected token (expired, or the account changed) ends the session. Login attempts are excluded
+    // so a wrong password does not log anyone out.
+    if (error.response?.status === 401 && !String(error.config?.url || '').startsWith('/auth/')) {
+      notifyExpired();
+    }
     if (error.response) {
       console.error(`API Error Response: ${error.response.status}`, {
         url: error.config?.url,

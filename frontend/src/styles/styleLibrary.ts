@@ -5,13 +5,13 @@ export const styleCommandLibrary: Record<string, SystemStyleObject> = {
   'rounded glass panel': {
     borderRadius: '24px',
     borderWidth: '1px',
-    borderColor: { base: 'rgba(121, 95, 238, 0.08)', _dark: 'rgba(255,255,255,0.12)' },
+    borderColor: { base: 'rgba(17, 17, 17, 0.08)', _dark: 'rgba(255,255,255,0.12)' },
     bg: { base: 'rgba(255, 248, 240, 0.95)', _dark: 'rgba(8, 15, 37, 0.95)' },
   },
   'soft glow border': {
     boxShadow: {
-      base: '0 0 0 1px rgba(99,102,241,0.15), 0 15px 45px rgba(148,163,184,0.25)',
-      _dark: '0 0 0 1px rgba(99,102,241,0.25), 0 15px 45px rgba(15,23,42,0.55)',
+      base: '0 0 0 1px rgba(17, 17, 17,0.15), 0 15px 45px rgba(148,163,184,0.25)',
+      _dark: '0 0 0 1px rgba(17, 17, 17,0.25), 0 15px 45px rgba(15,23,42,0.55)',
     },
   },
   'padded layout': {
@@ -91,9 +91,9 @@ export const styleCommandLibrary: Record<string, SystemStyleObject> = {
     bg: { base: 'rgba(255, 248, 240, 0.95)', _dark: 'rgba(15, 18, 38, 0.92)' },
     borderRadius: '28px',
     borderWidth: '1px',
-    borderColor: { base: 'rgba(99,102,241,0.2)', _dark: 'rgba(99,102,241,0.35)' },
+    borderColor: { base: 'rgba(17, 17, 17,0.2)', _dark: 'rgba(17, 17, 17,0.35)' },
     boxShadow: {
-      base: '0 30px 80px rgba(121, 95, 238, 0.08)',
+      base: '0 30px 80px rgba(17, 17, 17, 0.08)',
       _dark: '0 30px 80px rgba(7,10,25,0.7)',
     },
   },

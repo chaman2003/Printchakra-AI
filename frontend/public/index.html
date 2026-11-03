@@ -3,15 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, viewport-fit=cover" />
-    <meta name="theme-color" content="#050711" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#f2f2f2" />
+    <meta name="color-scheme" content="light" />
     <meta
       name="description"
-      content="PrintChakra - Advanced document scanning, OCR, and printing system with AI-powered image enhancement"
+      content="PrintChakra turns any phone into a document scanner. Capture, clean up, read and print documents from one workspace."
     />
     <link rel="icon" href="%PUBLIC_URL%/logo.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <title>PrintChakra - Document Scanner & Printer</title>
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=satoshi@400,500,700&display=swap"
+    />
+    <title>PrintChakra | Scan, read and print documents</title>
     <style>
       /* Critical CSS for preventing layout shift during load */
       html, body, #root {
@@ -21,6 +27,7 @@
         margin: 0;
         padding: 0;
         overflow-x: hidden;
+        background: #f2f2f2;
       }
       #root {
         display: flex;
@@ -29,18 +36,7 @@
     </style>
   </head>
   <body>
-    <!-- index.html recreated on backup branch to allow development server -->
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
   </body>
 </html>

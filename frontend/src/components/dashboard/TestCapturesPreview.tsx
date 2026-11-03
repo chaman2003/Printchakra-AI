@@ -1,4 +1,5 @@
 import React from 'react';
+import { withToken } from '../../auth/session';
 import { Box, Button, Flex, Grid, HStack, Image, Text, useColorModeValue } from '@chakra-ui/react';
 import { FiCamera, FiTrash2 } from 'react-icons/fi';
 import { Iconify } from '../common';
@@ -68,7 +69,7 @@ export const TestCapturesPreview: React.FC<TestCapturesPreviewProps> = ({
             position="relative"
           >
             <Image
-              src={`${API_BASE_URL}${capture.url}`}
+              src={withToken(`${API_BASE_URL}${capture.url}`)}
               alt={capture.filename}
               w="100%"
               h="80px"

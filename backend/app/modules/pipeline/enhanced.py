@@ -12,11 +12,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-import pytesseract
 from PIL import Image
 
+# Optional: not installed on serverless hosting (OCR runs through Gemini there).
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
+
 _tesseract_cmd = os.environ.get("TESSERACT_CMD")
-if _tesseract_cmd:
+if _tesseract_cmd and pytesseract is not None:
     pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd
 
 from ..image import ImageEnhancer
@@ -1023,12 +1028,24 @@ class EnhancedDocumentPipeline:
             text = ""
             raw_results: List[Dict[str, Any]] = []
             ocr_engine = "tesseract"
+            gemini_result: Optional[Dict[str, Any]] = None
             try:
-                try:
-                    text, raw_results, ocr_engine = self._run_paddle_ocr(enhanced_gray)
-                except Exception as paddle_error:
-                    logger.warning(f"PaddleOCR unavailable, falling back to Tesseract: {paddle_error}")
-                    text, raw_results, ocr_engine = self._run_tesseract_ocr(enhanced_gray)
+                from ..ocr.gemini_ocr import is_available as gemini_available, ocr_image_bytes
+
+                if gemini_available():
+                    ok, encoded = cv2.imencode(".jpg", output_image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                    if not ok:
+                        raise RuntimeError("Could not encode the processed image for OCR")
+                    gemini_result = ocr_image_bytes(encoded.tobytes())
+                    text = gemini_result["full_text"]
+                    raw_results = gemini_result["raw_results"]
+                    ocr_engine = "gemini"
+                else:
+                    try:
+                        text, raw_results, ocr_engine = self._run_paddle_ocr(enhanced_gray)
+                    except Exception as paddle_error:
+                        logger.warning(f"PaddleOCR unavailable, falling back to Tesseract: {paddle_error}")
+                        text, raw_results, ocr_engine = self._run_tesseract_ocr(enhanced_gray)
             except Exception as ocr_error:
                 logger.warning(f"OCR failed: {ocr_error}")
 
@@ -1047,7 +1064,7 @@ class EnhancedDocumentPipeline:
                 "regions_detected": len(raw_results),
                 "confidence": float(confidence_avg * 100),
             }
-            pipeline_stats["ocr_result"] = {
+            pipeline_stats["ocr_result"] = gemini_result or {
                 "raw_results": raw_results,
                 "structured_units": structured_units,
                 "full_text": text,
