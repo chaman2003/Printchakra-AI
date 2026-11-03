@@ -1,7 +1,8 @@
 // Mints a single-use Live API token so the browser never receives GEMINI_API_KEY.
 // The token locks model, voice, language, instructions and tools to the settings below, and the same
 // settings are returned so the browser connects with an identical config.
-// shortcut: no per-visitor rate limit, a token is single-use and expires in 30 minutes, add IP limiting if traffic grows.
+// Only logged-in users get a token: the caller's login token is checked against the API.
+// shortcut: no per-user rate limit, a token is single-use and expires in 30 minutes, add IP limiting if traffic grows.
 
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { LIVE_SYSTEM_INSTRUCTION, LIVE_TOOLS } = require('./_voice');
@@ -13,9 +14,25 @@ const send = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
+const API_URL = process.env.REACT_APP_API_URL || 'https://printchakra-api.vercel.app';
+
+const isLoggedIn = async (authorization) => {
+  if (!authorization) return false;
+  try {
+    const response = await fetch(`/auth/me`, { headers: { Authorization: authorization } });
+    return response.ok;
+  } catch (err) {
+    console.error('Could not verify the login:', err);
+    return false;
+  }
+};
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return send(res, 405, { error: 'Method not allowed' });
+  }
+  if (!(await isLoggedIn(req.headers.authorization))) {
+    return send(res, 401, { error: 'Please log in' });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;

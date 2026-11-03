@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Alert, AlertIcon, Badge, Box, Button, Flex, Text, VStack, useColorModeValue } from '@chakra-ui/react';
 import type { LiveServerMessage, Session } from '@google/genai';
 import { emitVoiceCommand } from '../../aiassist/commandBus';
+import { authHeader } from '../../auth/session';
 
 // Voice assistant on Gemini Live. The browser connects straight to Gemini with a
 // short-lived token from /api/gemini-token, so the API key stays on the server.
@@ -222,7 +223,7 @@ const GeminiLiveVoice: React.FC = () => {
     };
 
     try {
-      const tokenRes = await fetch('/api/gemini-token', { method: 'POST' });
+      const tokenRes = await fetch('/api/gemini-token', { method: 'POST', headers: authHeader() });
       const tokenBody = await tokenRes.json().catch(() => ({}));
       if (!tokenRes.ok || !tokenBody.token) {
         throw new Error(tokenBody.error || 'Could not start a voice session');
