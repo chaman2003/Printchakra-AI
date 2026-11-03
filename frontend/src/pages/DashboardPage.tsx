@@ -244,9 +244,6 @@ const useImageWithHeaders = (imageUrl: string, refreshToken?: number) => {
         const url = imageUrl.includes('?')
           ? `${imageUrl}&${cacheBuster}`
           : `${imageUrl}?${cacheBuster}`;
-        // #region agent log
-        fetch('http://127.0.0.1:7763/ingest/e0ffd95a-b2d8-493a-bf3f-6c9f296fa117',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'68db5a'},body:JSON.stringify({sessionId:'68db5a',runId:'run1',hypothesisId:'H1',location:'frontend/src/pages/DashboardPage.tsx:loadImage:request',message:'dashboard_image_fetch_start',data:{imageUrl,url,refreshToken:refreshToken||0},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
 
         const response = await fetch(url, {
           headers,
@@ -260,9 +257,6 @@ const useImageWithHeaders = (imageUrl: string, refreshToken?: number) => {
         }
 
         const blob = await response.blob();
-        // #region agent log
-        fetch('http://127.0.0.1:7763/ingest/e0ffd95a-b2d8-493a-bf3f-6c9f296fa117',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'68db5a'},body:JSON.stringify({sessionId:'68db5a',runId:'run1',hypothesisId:'H1',location:'frontend/src/pages/DashboardPage.tsx:loadImage:response',message:'dashboard_image_fetch_result',data:{url,status:response.status,ok:response.ok,blobSize:blob?.size||0},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
 
         // Validate blob
         if (!blob || blob.size === 0) {
@@ -2945,9 +2939,6 @@ const Dashboard: React.FC = () => {
 
     const newFileListener = (data: any) => {
       console.log('New file uploaded:', data);
-      // #region agent log
-      fetch('http://127.0.0.1:7763/ingest/e0ffd95a-b2d8-493a-bf3f-6c9f296fa117',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'68db5a'},body:JSON.stringify({sessionId:'68db5a',runId:'run1',hypothesisId:'H4',location:'frontend/src/pages/DashboardPage.tsx:newFileListener',message:'socket_new_file_received',data:{filename:data?.filename||null,source:data?.source||null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       // Immediately add placeholder file to state for instant UI feedback
       if (data?.filename) {
         setFiles((prevFiles: FileInfo[]) => {
@@ -3016,9 +3007,6 @@ const Dashboard: React.FC = () => {
 
     const processingCompleteListener = (data: any) => {
       console.log('Processing complete:', data);
-      // #region agent log
-      fetch('http://127.0.0.1:7763/ingest/e0ffd95a-b2d8-493a-bf3f-6c9f296fa117',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'68db5a'},body:JSON.stringify({sessionId:'68db5a',runId:'run1',hypothesisId:'H4',location:'frontend/src/pages/DashboardPage.tsx:processingCompleteListener',message:'socket_processing_complete_received',data:{filename:data?.filename||null,original_filename:data?.original_filename||null,has_text:!!data?.has_text,pipeline:data?.pipeline||null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       setProcessingProgress(null);
 
       // Handle renamed files - match by original_filename if file was renamed
