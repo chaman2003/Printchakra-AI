@@ -19,7 +19,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'https://printchakra-api.vercel
 const isLoggedIn = async (authorization) => {
   if (!authorization) return false;
   try {
-    const response = await fetch(`/auth/me`, { headers: { Authorization: authorization } });
+    const response = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: authorization } });
     return response.ok;
   } catch (err) {
     console.error('Could not verify the login:', err);
