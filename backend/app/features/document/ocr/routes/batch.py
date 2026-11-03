@@ -5,7 +5,7 @@ Batch OCR processing endpoints.
 """
 
 import os
-from app.core.paths import app_data_dir
+from app.core.paths import app_data_dir, current_user_id
 import logging
 from flask import jsonify, request
 from werkzeug.utils import secure_filename
@@ -14,10 +14,14 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = app_data_dir()
 
-# Store for batch job status
+# Store for batch job status. Each job remembers its owner; other users get "not found".
 batch_jobs = {}
+
+
+def _own_job(batch_id):
+    job = batch_jobs.get(batch_id)
+    return job if job and job.get("owner") == current_user_id() else None
 
 
 @ocr_bp.route("/batch", methods=["POST", "OPTIONS"])
@@ -55,7 +59,8 @@ def start_batch_ocr():
             "results": [],
             "created_at": datetime.now().isoformat(),
             "language": language,
-            "use_ollama": use_ollama
+            "use_ollama": use_ollama,
+            "owner": current_user_id(),
         }
         
         batch_jobs[batch_id] = batch_job
@@ -63,8 +68,10 @@ def start_batch_ocr():
         # Start processing in background (in production, use Celery or similar)
         import threading
         
+        data_dir = app_data_dir()  # resolved here: the worker thread has no logged-in user
+
         def process_batch():
-            process_batch_ocr(batch_id, documents, language, use_ollama)
+            process_batch_ocr(batch_id, documents, language, use_ollama, data_dir)
         
         thread = threading.Thread(target=process_batch)
         thread.start()
@@ -90,14 +97,13 @@ def get_batch_status(batch_id):
         return create_options_response()
     
     try:
-        if batch_id not in batch_jobs:
+        job = _own_job(batch_id)
+        if not job:
             return jsonify({"success": False, "error": "Batch job not found"}), 404
-        
-        job = batch_jobs[batch_id]
-        
+
         return jsonify({
             "success": True,
-            "batch": job
+            "batch": {k: v for k, v in job.items() if k != "owner"}
         })
     
     except Exception as e:
@@ -111,10 +117,11 @@ def cancel_batch_ocr(batch_id):
         return create_options_response()
     
     try:
-        if batch_id not in batch_jobs:
+        job = _own_job(batch_id)
+        if not job:
             return jsonify({"success": False, "error": "Batch job not found"}), 404
-        
-        batch_jobs[batch_id]["status"] = "cancelled"
+
+        job["status"] = "cancelled"
         
         logger.info(f"[OK] Batch OCR cancelled: {batch_id}")
         
@@ -134,11 +141,10 @@ def get_batch_results(batch_id):
         return create_options_response()
     
     try:
-        if batch_id not in batch_jobs:
+        job = _own_job(batch_id)
+        if not job:
             return jsonify({"success": False, "error": "Batch job not found"}), 404
-        
-        job = batch_jobs[batch_id]
-        
+
         return jsonify({
             "success": True,
             "batch_id": batch_id,
@@ -162,6 +168,8 @@ def list_batch_jobs():
     try:
         jobs = []
         for batch_id, job in batch_jobs.items():
+            if job.get("owner") != current_user_id():
+                continue
             jobs.append({
                 "id": batch_id,
                 "status": job["status"],
@@ -184,7 +192,7 @@ def list_batch_jobs():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-def process_batch_ocr(batch_id: str, documents: list, language: str, use_ollama: bool):
+def process_batch_ocr(batch_id: str, documents: list, language: str, use_ollama: bool, data_dir: str):
     """Process batch OCR in background."""
     try:
         from app.features.document.ocr.routes.extraction import perform_ocr
@@ -202,7 +210,7 @@ def process_batch_ocr(batch_id: str, documents: list, language: str, use_ollama:
             # Find document
             document_path = None
             for folder in ["uploads", "pdfs", "processed"]:
-                filepath = os.path.join(DATA_DIR, folder, filename)
+                filepath = os.path.join(data_dir, folder, filename)
                 if os.path.exists(filepath):
                     document_path = filepath
                     break

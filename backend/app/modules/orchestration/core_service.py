@@ -394,25 +394,22 @@ class PrintScanOrchestrator(OrchestratorRuntimeMixin):
             "frontend_state": self._build_frontend_state("scan"),
         }
 
-# Global orchestrator instance
-_orchestrator_instance = None
+# One orchestrator per data directory, so each user's workflow state and documents stay separate.
+_orchestrators: Dict[str, PrintScanOrchestrator] = {}
 _orchestrator_lock = threading.Lock()
 
 
 def get_orchestrator(data_dir: str) -> PrintScanOrchestrator:
     """
-    Get or create global orchestrator instance
+    Get or create the orchestrator for a data directory
 
     Args:
-        data_dir: Data directory path
+        data_dir: Data directory path (a user's own folder when logged in)
 
     Returns:
         PrintScanOrchestrator instance
     """
-    global _orchestrator_instance
-
     with _orchestrator_lock:
-        if _orchestrator_instance is None:
-            _orchestrator_instance = PrintScanOrchestrator(data_dir)
-
-        return _orchestrator_instance
+        if data_dir not in _orchestrators:
+            _orchestrators[data_dir] = PrintScanOrchestrator(data_dir)
+        return _orchestrators[data_dir]

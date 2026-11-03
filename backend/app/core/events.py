@@ -1,8 +1,8 @@
 """
 HTTP replacement for Socket.IO on serverless hosting.
 
-GET  /events/poll?since=<id>   -> events newer than <id>. since=-1 returns only the latest id.
-POST /events/emit              -> relay an event from one client to the others (e.g. dashboard -> phone).
+GET  /events/poll?since=<id>   -> the logged-in user's events newer than <id>. since=-1 returns only the latest id.
+POST /events/emit              -> relay an event to the same user's other clients (e.g. dashboard -> phone).
 """
 
 import logging
@@ -10,7 +10,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from app.core import cloud
-from app.core.paths import IS_CLOUD
+from app.core.paths import IS_CLOUD, current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def poll():
     except ValueError:
         since = -1
     try:
-        events, last_id = cloud.poll_events(since)
+        events, last_id = cloud.poll_events(since, current_user_id())
     except Exception as exc:
         logger.error("poll failed: %s", exc)
         return jsonify({"success": False, "error": "event store unavailable"}), 503

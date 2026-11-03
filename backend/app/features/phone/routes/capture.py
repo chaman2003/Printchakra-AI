@@ -16,7 +16,8 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-CAPTURE_FOLDER = os.path.join(app_data_dir(), "uploads", "captures")
+def _capture_folder():
+    return os.path.join(app_data_dir(), "uploads", "captures")
 
 
 @phone_bp.route("/capture", methods=["POST", "OPTIONS"])
@@ -54,9 +55,9 @@ def capture_image():
         filename = f"capture_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
         
         # Ensure folder exists
-        os.makedirs(CAPTURE_FOLDER, exist_ok=True)
+        os.makedirs(_capture_folder(), exist_ok=True)
         
-        filepath = os.path.join(CAPTURE_FOLDER, filename)
+        filepath = os.path.join(_capture_folder(), filename)
         
         # Save image
         with open(filepath, "wb") as f:
@@ -112,8 +113,8 @@ def scan_document():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"scan_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
         
-        os.makedirs(CAPTURE_FOLDER, exist_ok=True)
-        filepath = os.path.join(CAPTURE_FOLDER, filename)
+        os.makedirs(_capture_folder(), exist_ok=True)
+        filepath = os.path.join(_capture_folder(), filename)
         
         with open(filepath, "wb") as f:
             f.write(processed_bytes)
@@ -139,12 +140,12 @@ def list_captures():
         return create_options_response()
     
     try:
-        if not os.path.exists(CAPTURE_FOLDER):
+        if not os.path.exists(_capture_folder()):
             return jsonify({"success": True, "captures": []})
         
         captures = []
-        for filename in os.listdir(CAPTURE_FOLDER):
-            filepath = os.path.join(CAPTURE_FOLDER, filename)
+        for filename in os.listdir(_capture_folder()):
+            filepath = os.path.join(_capture_folder(), filename)
             if os.path.isfile(filepath):
                 captures.append({
                     "filename": filename,
@@ -174,7 +175,7 @@ def delete_capture(filename):
     try:
         from werkzeug.utils import secure_filename
         
-        filepath = os.path.join(CAPTURE_FOLDER, secure_filename(filename))
+        filepath = os.path.join(_capture_folder(), secure_filename(filename))
         
         if not os.path.exists(filepath):
             return jsonify({"success": False, "error": "File not found"}), 404
@@ -203,8 +204,8 @@ def upload_test_capture():
         if not safe_name:
             safe_name = "test_capture.jpg"
 
-        os.makedirs(CAPTURE_FOLDER, exist_ok=True)
-        target_path = os.path.join(CAPTURE_FOLDER, safe_name)
+        os.makedirs(_capture_folder(), exist_ok=True)
+        target_path = os.path.join(_capture_folder(), safe_name)
         file.save(target_path)
         payload = {
             "filename": safe_name,
@@ -225,9 +226,9 @@ def list_test_captures():
 
     try:
         captures = []
-        if os.path.isdir(CAPTURE_FOLDER):
-            for filename in os.listdir(CAPTURE_FOLDER):
-                full_path = os.path.join(CAPTURE_FOLDER, filename)
+        if os.path.isdir(_capture_folder()):
+            for filename in os.listdir(_capture_folder()):
+                full_path = os.path.join(_capture_folder(), filename)
                 if os.path.isfile(full_path):
                     captures.append(
                         {
@@ -249,9 +250,9 @@ def clear_test_captures():
         return create_options_response()
     try:
         removed = 0
-        if os.path.isdir(CAPTURE_FOLDER):
-            for filename in os.listdir(CAPTURE_FOLDER):
-                full_path = os.path.join(CAPTURE_FOLDER, filename)
+        if os.path.isdir(_capture_folder()):
+            for filename in os.listdir(_capture_folder()):
+                full_path = os.path.join(_capture_folder(), filename)
                 if os.path.isfile(full_path):
                     os.remove(full_path)
                     removed += 1

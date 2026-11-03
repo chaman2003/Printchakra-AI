@@ -14,7 +14,6 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = app_data_dir()
 
 
 @print_bp.route("/job", methods=["POST", "OPTIONS"])
@@ -47,7 +46,7 @@ def create_print_job():
         document_path = None
         
         for folder in ["uploads", "pdfs", "processed", "converted"]:
-            filepath = os.path.join(DATA_DIR, folder, filename)
+            filepath = os.path.join(app_data_dir(), folder, filename)
             if os.path.exists(filepath):
                 document_path = filepath
                 break

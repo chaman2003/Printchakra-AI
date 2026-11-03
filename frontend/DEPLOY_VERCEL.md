@@ -55,6 +55,18 @@ npx vercel deploy --prod
 The root `.vercelignore` keeps the upload small. The `backend` project is not connected to Git
 (a push would try to build the repo root). The `printchakra` project keeps its GitHub link.
 
+## Accounts
+
+- Log in with a **username or an email**. Sign-up asks for name, username, email and password.
+- Every account has a private workspace: its files live under `users/<id>/` in Postgres and on disk, and
+  realtime events are tagged with the account that caused them. One account cannot list, read, change or
+  delete another account's files, OCR text, print settings or events.
+- Demo accounts are created on first use (turn off with `SEED_TEST_USER=0`):
+  `test` / `test123` (user) and `admin` / `admin123` (admin). **Change or disable them before real use.**
+- An admin sees the account list (`/admin/users`, page `/admin`) with file counts and storage use, but not
+  other users' files.
+- Files uploaded before accounts were isolated stay in the database under their old paths and are not
+  visible to any account.
 ## Vercel MCP
 
 `npx -y add-mcp https://mcp.vercel.com -a kiro-cli -g -y -n vercel` adds the Vercel MCP server to

@@ -4,8 +4,9 @@ PrintChakra Backend - Pipeline Info Routes
 Provides lightweight pipeline metadata endpoints used by frontend checks.
 """
 
-from flask import current_app, jsonify
+from flask import jsonify
 
+from app.core.config import get_data_dirs
 from app.features.dashboard.routes import dashboard_bp
 
 
@@ -14,7 +15,7 @@ def _build_pipeline_info() -> dict:
     try:
         from app.modules.pipeline.enhanced import EnhancedDocumentPipeline
 
-        processed_dir = current_app.config.get("PROCESSED_DIR") or current_app.root_path
+        processed_dir = get_data_dirs()["PROCESSED_DIR"]
         pipeline = EnhancedDocumentPipeline(storage_dir=processed_dir)
         return {
             "available": True,

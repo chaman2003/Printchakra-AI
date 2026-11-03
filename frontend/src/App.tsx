@@ -6,6 +6,7 @@ import { LuX } from 'react-icons/lu';
 import Dashboard from './pages/Dashboard';
 import Phone from './pages/Phone';
 import Playground from './pages/Playground';
+import AdminPage from './pages/AdminPage';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import SignupPage from './pages/auth/SignupPage';
@@ -169,6 +170,7 @@ function AppRoutes() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/playground" element={<Playground />} />
         <Route path="/phone" element={<Phone />} />
+        <Route path="/admin" element={<AdminPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

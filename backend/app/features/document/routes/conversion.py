@@ -15,8 +15,8 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = app_data_dir()
-CONVERTED_DIR = os.path.join(DATA_DIR, "converted")
+def _converted_dir():
+    return os.path.join(app_data_dir(), "converted")
 
 
 @document_bp.route("/convert", methods=["POST", "OPTIONS"])
@@ -42,7 +42,7 @@ def convert_document():
         # Find source document
         source_path = None
         for folder in ["uploads", "pdfs", "processed"]:
-            filepath = os.path.join(DATA_DIR, folder, filename)
+            filepath = os.path.join(app_data_dir(), folder, filename)
             if os.path.exists(filepath):
                 source_path = filepath
                 break
@@ -57,8 +57,8 @@ def convert_document():
         import uuid
         output_name = f"{os.path.splitext(filename)[0]}_{uuid.uuid4().hex[:8]}.{target_format}"
         
-        os.makedirs(CONVERTED_DIR, exist_ok=True)
-        output_path = os.path.join(CONVERTED_DIR, output_name)
+        os.makedirs(_converted_dir(), exist_ok=True)
+        output_path = os.path.join(_converted_dir(), output_name)
         
         # Perform conversion
         try:
@@ -113,7 +113,7 @@ def convert_pdf_to_images_route(doc_id):
         # Find PDF
         source_path = None
         for folder in ["uploads", "pdfs", "processed"]:
-            filepath = os.path.join(DATA_DIR, folder, filename)
+            filepath = os.path.join(app_data_dir(), folder, filename)
             if os.path.exists(filepath):
                 source_path = filepath
                 break
@@ -123,9 +123,9 @@ def convert_pdf_to_images_route(doc_id):
         
         # Convert
         import uuid
-        output_base = os.path.join(CONVERTED_DIR, f"{os.path.splitext(filename)[0]}_{uuid.uuid4().hex[:8]}")
+        output_base = os.path.join(_converted_dir(), f"{os.path.splitext(filename)[0]}_{uuid.uuid4().hex[:8]}")
         
-        os.makedirs(CONVERTED_DIR, exist_ok=True)
+        os.makedirs(_converted_dir(), exist_ok=True)
         
         output_paths = convert_pdf_to_images(source_path, output_base, format_type, dpi)
         
@@ -162,7 +162,7 @@ def convert_images_to_pdf_route():
         for img_id in images:
             filename = secure_filename(img_id)
             for folder in ["uploads", "processed", "converted"]:
-                filepath = os.path.join(DATA_DIR, folder, filename)
+                filepath = os.path.join(app_data_dir(), folder, filename)
                 if os.path.exists(filepath):
                     image_paths.append(filepath)
                     break
@@ -175,8 +175,8 @@ def convert_images_to_pdf_route():
         output_name = secure_filename(output_name)
         output_filename = f"{os.path.splitext(output_name)[0]}_{uuid.uuid4().hex[:8]}.pdf"
         
-        os.makedirs(CONVERTED_DIR, exist_ok=True)
-        output_path = os.path.join(CONVERTED_DIR, output_filename)
+        os.makedirs(_converted_dir(), exist_ok=True)
+        output_path = os.path.join(_converted_dir(), output_filename)
         
         combine_images_to_pdf(image_paths, output_path)
         

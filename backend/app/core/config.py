@@ -7,7 +7,7 @@ Centralized configuration management for the Flask application.
 import os
 from typing import Dict, Any
 
-from app.core.paths import data_root
+from app.core.paths import data_root, user_root
 
 
 class BaseConfig:
@@ -145,7 +145,7 @@ def get_data_dirs() -> Dict[str, str]:
         Dictionary of directory names to paths
     """
     config = get_config()
-    return {
+    dirs = {
         'BASE_DIR': config.BASE_DIR,
         'PUBLIC_DIR': config.PUBLIC_DIR,
         'DATA_DIR': config.DATA_DIR,
@@ -157,3 +157,10 @@ def get_data_dirs() -> Dict[str, str]:
         'OCR_DATA_DIR': config.OCR_DATA_DIR,
         'MODELS_DIR': config.MODELS_DIR,
     }
+    # A logged-in user works inside a private folder. MODELS_DIR stays shared (it holds no user data).
+    root = user_root(config.DATA_DIR)
+    if root != config.DATA_DIR:
+        for key in ('UPLOAD_DIR', 'PROCESSED_DIR', 'TEXT_DIR', 'PDF_DIR', 'CONVERTED_DIR', 'OCR_DATA_DIR'):
+            dirs[key] = os.path.join(root, os.path.relpath(dirs[key], config.DATA_DIR))
+        dirs['DATA_DIR'] = root
+    return dirs

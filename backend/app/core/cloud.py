@@ -9,6 +9,9 @@ Two problems are solved here so the rest of the Flask app can stay file based:
 2. Realtime events. Serverless has no websockets. `emit()` writes an event row and clients read
    new rows through GET /events/poll (see app/core/events.py).
 
+Every account owns the folder `users/<id>/`. A request only pulls, pushes and scans that folder,
+and events carry the id of the user that caused them, so accounts never see each other's data.
+
 Required: DATABASE_URL (Neon, added by the Vercel marketplace integration).
 """
 
@@ -18,7 +21,7 @@ import os
 import threading
 from typing import Dict, Optional, Tuple
 
-from app.core.paths import CLOUD_DATA_ROOT, IS_CLOUD
+from app.core.paths import CLOUD_DATA_ROOT, IS_CLOUD, current_user_id, user_scope
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,9 @@ CREATE TABLE IF NOT EXISTS pc_users (
     password_hash TEXT NOT NULL,
     created       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE pc_users ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE pc_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+CREATE UNIQUE INDEX IF NOT EXISTS pc_users_username_key ON pc_users (lower(username));
 CREATE TABLE IF NOT EXISTS pc_events (
     id      BIGSERIAL PRIMARY KEY,
     name    TEXT NOT NULL,
@@ -47,6 +53,8 @@ CREATE TABLE IF NOT EXISTS pc_events (
     sender  TEXT,
     created TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE pc_events ADD COLUMN IF NOT EXISTS user_id BIGINT;
+CREATE INDEX IF NOT EXISTS pc_events_user_idx ON pc_events (user_id, id);
 """
 
 _lock = threading.RLock()
@@ -106,9 +114,10 @@ def _signature(full: str) -> Optional[Tuple[int, int]]:
     return (st.st_size, st.st_mtime_ns)
 
 
-def _scan() -> Dict[str, Tuple[int, int]]:
+def _scan(prefix: str) -> Dict[str, Tuple[int, int]]:
+    """Signatures of everything below `prefix` (a user's folder), keyed relative to CLOUD_DATA_ROOT."""
     state: Dict[str, Tuple[int, int]] = {}
-    for root, dirs, files in os.walk(CLOUD_DATA_ROOT):
+    for root, dirs, files in os.walk(_abs(prefix)):
         for name in dirs:
             rel = os.path.relpath(os.path.join(root, name), CLOUD_DATA_ROOT).replace(os.sep, "/")
             state[rel + "/"] = (0, 0)
@@ -121,13 +130,16 @@ def _scan() -> Dict[str, Tuple[int, int]]:
 
 
 def pull() -> None:
-    """Bring this instance's disk up to date with the database."""
-    if not enabled():
+    """Bring this instance's disk up to date with the database, for the current user's folder only."""
+    prefix = user_scope()
+    if not enabled() or not prefix:
         return
-    os.makedirs(CLOUD_DATA_ROOT, exist_ok=True)
+    os.makedirs(_abs(prefix), exist_ok=True)
     with _lock:
         conn = _connect()
-        rows = conn.execute("SELECT path, rev, deleted FROM pc_files").fetchall()
+        rows = conn.execute(
+            "SELECT path, rev, deleted FROM pc_files WHERE starts_with(path, %s)", (prefix,)
+        ).fetchall()
         remote = {path: (rev, deleted) for path, rev, deleted in rows}
 
         # Directories first so files can be written into them.
@@ -153,7 +165,7 @@ def pull() -> None:
                 _local_state[path] = sig
 
         # Entries deleted elsewhere. Deepest paths first so directories are empty when removed.
-        gone = [p for p in _known if p not in remote or remote[p][1]]
+        gone = [p for p in _known if p.startswith(prefix) and (p not in remote or remote[p][1])]
         for path in sorted(gone, key=len, reverse=True):
             target = _abs(path)
             try:
@@ -165,15 +177,16 @@ def pull() -> None:
 
 
 def push() -> None:
-    """Write files that changed since the last pull/push to the database."""
-    if not enabled():
+    """Write the current user's files that changed since the last pull/push to the database."""
+    prefix = user_scope()
+    if not enabled() or not prefix:
         return
     with _lock:
-        if not os.path.isdir(CLOUD_DATA_ROOT):
+        if not os.path.isdir(_abs(prefix)):
             return
-        current = _scan()
+        current = _scan(prefix)
         changed = [p for p, sig in current.items() if _local_state.get(p) != sig]
-        removed = [p for p in _local_state if p not in current]
+        removed = [p for p in _local_state if p.startswith(prefix) and p not in current]
         if not changed and not removed:
             return
 
@@ -221,8 +234,8 @@ def emit(name: str, payload: Optional[dict] = None, sender: Optional[str] = None
         conn = _connect()
         with _lock:
             row = conn.execute(
-                "INSERT INTO pc_events (name, payload, sender) VALUES (%s, %s::jsonb, %s) RETURNING id",
-                (name, json.dumps(payload or {}, default=str), sender),
+                "INSERT INTO pc_events (name, payload, sender, user_id) VALUES (%s, %s::jsonb, %s, %s) RETURNING id",
+                (name, json.dumps(payload or {}, default=str), sender, current_user_id()),
             ).fetchone()
             conn.execute("DELETE FROM pc_events WHERE created < now() - interval '15 minutes'")
         return row[0]
@@ -231,15 +244,15 @@ def emit(name: str, payload: Optional[dict] = None, sender: Optional[str] = None
         return None
 
 
-def poll_events(since: int, limit: int = 200):
-    """Return (events, last_id). A negative `since` only returns the current last id."""
+def poll_events(since: int, user_id, limit: int = 200):
+    """Return (events, last_id) of one user's events. A negative `since` only returns the current last id."""
     conn = _connect()
     if since < 0:
         row = conn.execute("SELECT COALESCE(MAX(id), 0) FROM pc_events").fetchone()
         return [], int(row[0])
     rows = conn.execute(
-        "SELECT id, name, payload, sender FROM pc_events WHERE id > %s ORDER BY id LIMIT %s",
-        (since, limit),
+        "SELECT id, name, payload, sender FROM pc_events WHERE id > %s AND user_id = %s ORDER BY id LIMIT %s",
+        (since, user_id, limit),
     ).fetchall()
     events = [{"id": r[0], "name": r[1], "data": r[2], "sender": r[3]} for r in rows]
     last_id = events[-1]["id"] if events else since
@@ -250,7 +263,8 @@ def init_app(app) -> None:
     """Attach the sync hooks to a Flask app."""
     from flask import request
 
-    skip_prefixes = ("/events/", "/health", "/ping")
+    # /auth/ never touches files, so it must not trigger a sync.
+    skip_prefixes = ("/events/", "/health", "/ping", "/auth/")
 
     @app.before_request
     def _cloud_pull():

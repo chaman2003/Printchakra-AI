@@ -13,7 +13,8 @@ from app.core.middleware.cors import create_options_response
 
 logger = logging.getLogger(__name__)
 
-UPLOAD_FOLDER = os.path.join(app_data_dir(), "uploads")
+def _upload_folder():
+    return os.path.join(app_data_dir(), "uploads")
 
 
 @phone_bp.route("/quality/check", methods=["POST", "OPTIONS"])
@@ -119,8 +120,8 @@ def enhance_image():
             original_name = secure_filename(file.filename)
             enhanced_name = f"enhanced_{uuid.uuid4().hex[:8]}_{original_name}"
             
-            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-            filepath = os.path.join(UPLOAD_FOLDER, enhanced_name)
+            os.makedirs(_upload_folder(), exist_ok=True)
+            filepath = os.path.join(_upload_folder(), enhanced_name)
             
             with open(filepath, "wb") as f:
                 f.write(enhanced_data)
@@ -215,8 +216,8 @@ def resize_image():
             original_name = secure_filename(file.filename)
             resized_name = f"resized_{uuid.uuid4().hex[:8]}_{original_name}"
             
-            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-            filepath = os.path.join(UPLOAD_FOLDER, resized_name)
+            os.makedirs(_upload_folder(), exist_ok=True)
+            filepath = os.path.join(_upload_folder(), resized_name)
             
             with open(filepath, "wb") as f:
                 f.write(resized_data)

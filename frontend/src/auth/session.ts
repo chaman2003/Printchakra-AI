@@ -19,7 +19,12 @@ export interface SessionUser {
   id: number;
   email: string;
   name: string;
+  username?: string | null;
+  role?: 'user' | 'admin';
 }
+
+// Per-user data kept in the browser. It must not survive a logout, or the next person on this device would see it.
+const USER_DATA_KEYS = ['printchakra_ocr_results', 'printchakra_orchestrate_defaults'];
 
 export const getToken = (): string => {
   try {
@@ -46,6 +51,8 @@ export const saveSession = (token: string, user: SessionUser) => {
 export const clearSession = () => {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  USER_DATA_KEYS.forEach((key) => localStorage.removeItem(key));
+  sessionStorage.clear();
 };
 
 export const authHeader = (): Record<string, string> => {

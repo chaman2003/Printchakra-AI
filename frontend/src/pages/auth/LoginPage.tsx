@@ -6,10 +6,8 @@ import { OrDivider, PasswordField, TextField } from './AuthFields';
 import { PillButton } from '../../components/layout/SiteHeader';
 import { authErrorMessage, useAuth } from '../../auth/AuthContext';
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-
 // Demo account for trying the app. It is created on the server by default.
-const DEMO = { email: 'test@gmail.com', password: 'test123' };
+const DEMO = { username: 'test', password: 'test123' };
 
 const LoginPage: React.FC = () => {
   const { login } = useAuth();
@@ -17,16 +15,16 @@ const LoginPage: React.FC = () => {
   const location = useLocation();
   const redirectTo = (location.state as { from?: string } | null)?.from || '/dashboard';
 
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ identifier?: string; password?: string }>({});
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const submit = async (nextEmail = email, nextPassword = password) => {
+  const submit = async (nextIdentifier = identifier, nextPassword = password) => {
     if (busy) return;
     const nextErrors: typeof errors = {};
-    if (!EMAIL_RE.test(nextEmail.trim())) nextErrors.email = 'Enter a valid email address';
+    if (!nextIdentifier.trim()) nextErrors.identifier = 'Enter your username or email';
     if (!nextPassword) nextErrors.password = 'Enter your password';
     setErrors(nextErrors);
     setFormError('');
@@ -34,7 +32,7 @@ const LoginPage: React.FC = () => {
 
     setBusy(true);
     try {
-      await login(nextEmail.trim().toLowerCase(), nextPassword);
+      await login(nextIdentifier.trim().toLowerCase(), nextPassword);
       navigate(redirectTo, { replace: true });
     } catch (error) {
       setFormError(authErrorMessage(error));
@@ -61,14 +59,15 @@ const LoginPage: React.FC = () => {
             </Alert>
           )}
           <TextField
-            id="email"
-            label="Email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={setEmail}
-            error={errors.email}
+            id="identifier"
+            label="Username or email"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="username or you@example.com"
+            value={identifier}
+            onChange={setIdentifier}
+            error={errors.identifier}
             autoFocus
           />
           <PasswordField
@@ -93,9 +92,9 @@ const LoginPage: React.FC = () => {
         h="52px"
         isDisabled={busy}
         onClick={() => {
-          setEmail(DEMO.email);
+          setIdentifier(DEMO.username);
           setPassword(DEMO.password);
-          void submit(DEMO.email, DEMO.password);
+          void submit(DEMO.username, DEMO.password);
         }}
       >
         Try the demo account

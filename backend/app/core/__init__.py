@@ -53,9 +53,10 @@ def create_app(config_name: str = "development") -> Flask:
         app.register_blueprint(events_bp)
         cloud.init_app(app)
 
-    from app.features.auth import auth_bp
+    from app.features.auth import admin_bp, auth_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(admin_bp)
 
     # Initialize extensions
     _init_extensions(app)

@@ -95,9 +95,14 @@ const UserMenu: React.FC = () => {
       <MenuList>
         <Box px={4} py={2}>
           <Text fontWeight={700} noOfLines={1}>{user.name}</Text>
-          <Text fontSize="13px" color="#838282" noOfLines={1}>{user.email}</Text>
+          <Text fontSize="13px" color="#838282" noOfLines={1}>{user.username ? `@${user.username}` : user.email}</Text>
         </Box>
         <MenuDivider />
+        {user.role === 'admin' && (
+          <MenuItem as={RouterLink} to="/admin">
+            Accounts
+          </MenuItem>
+        )}
         <MenuItem
           icon={<IconLogOut size={16} />}
           onClick={() => {

@@ -13,8 +13,9 @@ interface AuthContextValue {
   user: SessionUser | null;
   /** True while the stored session is being checked with the server on first load. */
   checking: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (name: string, email: string, password: string) => Promise<void>;
+  /** identifier is a username or an email address. */
+  login: (identifier: string, password: string) => Promise<void>;
+  signup: (name: string, username: string, email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -77,14 +78,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await apiClient.post('/auth/login', { email, password });
+  const login = useCallback(async (identifier: string, password: string) => {
+    const response = await apiClient.post('/auth/login', { identifier, password });
     saveSession(response.data.token, response.data.user);
     setUser(response.data.user);
   }, []);
 
-  const signup = useCallback(async (name: string, email: string, password: string) => {
-    const response = await apiClient.post('/auth/signup', { name, email, password });
+  const signup = useCallback(async (name: string, username: string, email: string, password: string) => {
+    const response = await apiClient.post('/auth/signup', { name, username, email, password });
     saveSession(response.data.token, response.data.user);
     setUser(response.data.user);
   }, []);

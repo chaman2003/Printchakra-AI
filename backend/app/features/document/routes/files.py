@@ -196,7 +196,7 @@ def serve_processed_file(filename):
     )
     response = send_from_directory(selected_dir, selected_name)
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    response.headers["Cache-Control"] = "private, max-age=3600"
     return response
 
 
