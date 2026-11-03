@@ -4,15 +4,12 @@ import { Box } from '@chakra-ui/react';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { SiteFooter } from '../components/layout/SiteFooter';
 import { Hero } from './landing/Hero';
-import { Philosophy } from './landing/Philosophy';
-import { Showcase } from './landing/Showcase';
-import { Features } from './landing/Features';
-import { HowItWorks } from './landing/HowItWorks';
-import { Pricing } from './landing/Pricing';
-import { Faq } from './landing/Faq';
+import { Stats } from './landing/Stats';
+import { Engine } from './landing/Engine';
+import { Vision } from './landing/Vision';
 import { FinalCta } from './landing/FinalCta';
 
-/** Public marketing page. Section order follows design.md: hero, philosophy, showcase, services, then the SaaS basics. */
+/** Landing page: hero, key figures, "Inside the Engine", project vision, closing call to action, footer. */
 const LandingPage: React.FC = () => {
   const { hash } = useLocation();
 
@@ -31,12 +28,9 @@ const LandingPage: React.FC = () => {
       <SiteHeader mode="marketing" />
       <main>
         <Hero />
-        <Philosophy />
-        <Showcase />
-        <Features />
-        <HowItWorks />
-        <Pricing />
-        <Faq />
+        <Stats />
+        <Engine />
+        <Vision />
         <FinalCta />
       </main>
       <SiteFooter />

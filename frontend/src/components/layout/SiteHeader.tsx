@@ -29,11 +29,9 @@ import { useAIWorkspace } from '../../context/AIWorkspaceContext';
 export const HEADER_HEIGHT = 80;
 
 const MARKETING_LINKS = [
-  { label: 'Product', hash: '#product' },
-  { label: 'Features', hash: '#features' },
-  { label: 'How it works', hash: '#how' },
-  { label: 'Pricing', hash: '#pricing' },
-  { label: 'FAQ', hash: '#faq' },
+  { label: 'Overview', hash: '#overview' },
+  { label: 'Engine', hash: '#engine' },
+  { label: 'Vision', hash: '#vision' },
 ];
 
 const APP_LINKS = [

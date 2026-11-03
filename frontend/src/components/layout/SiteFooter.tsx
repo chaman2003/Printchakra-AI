@@ -37,29 +37,27 @@ export const SiteFooter: React.FC = () => (
         <VStack align="flex-start" spacing={5}>
           <Logo light />
           <Text maxW="340px" lineHeight={1.7}>
-            Scan with your phone, clean the page up, read the text and print it, all from one workspace.
+            Precision Hardware Logic. Scan with your phone, clean the page up, read the text and print it, all from one workspace.
           </Text>
         </VStack>
 
         {column(
-          'Product',
+          'Page',
           <>
-            <Link as={RouterLink} to={{ pathname: '/', hash: '#features' }} {...linkProps}>Features</Link>
-            <Link as={RouterLink} to={{ pathname: '/', hash: '#how' }} {...linkProps}>How it works</Link>
-            <Link as={RouterLink} to={{ pathname: '/', hash: '#pricing' }} {...linkProps}>Pricing</Link>
-            <Link as={RouterLink} to={{ pathname: '/', hash: '#faq' }} {...linkProps}>FAQ</Link>
+            <Link as={RouterLink} to={{ pathname: '/', hash: '#overview' }} {...linkProps}>Overview</Link>
+            <Link as={RouterLink} to={{ pathname: '/', hash: '#engine' }} {...linkProps}>Inside the Engine</Link>
+            <Link as={RouterLink} to={{ pathname: '/', hash: '#vision' }} {...linkProps}>Project Vision</Link>
           </>
         )}
 
         {column(
-          'Account',
+          'App',
           <>
-            <Link as={RouterLink} to="/login" {...linkProps}>Log in</Link>
-            <Link as={RouterLink} to="/signup" {...linkProps}>Create an account</Link>
-            <Link as={RouterLink} to="/dashboard" {...linkProps}>Open the app</Link>
+            <Link as={RouterLink} to="/dashboard" {...linkProps}>Dashboard</Link>
+            <Link as={RouterLink} to="/phone" {...linkProps}>Phone</Link>
+            <Link as={RouterLink} to="/playground" {...linkProps}>Playground</Link>
           </>
         )}
-
         {column(
           'Project',
           <>
@@ -76,8 +74,8 @@ export const SiteFooter: React.FC = () => (
 
       <Divider borderColor="rgba(255,255,255,0.05)" my={12} />
       <Flex justify="space-between" direction={{ base: 'column', md: 'row' }} gap={3} fontSize="13px">
-        <Text>© {new Date().getFullYear()} PrintChakra. Built by Chaman S.</Text>
-        <Text>Free while in beta.</Text>
+        <Text>{'\u00a9'} {new Date().getFullYear()} PrintChakra. Built with {'\u2764'} for document efficiency.</Text>
+        <Text>Built by Chaman S.</Text>
       </Flex>
     </Box>
   </Box>
